@@ -1,0 +1,11 @@
+## Interface: 11200
+## Title: |cff33ff99[DoiteAuras]|r
+## Notes: Simplified WeakAura-style addon
+## Author: Doite
+## Version: 0.1
+## SavedVariablesPerCharacter: DoiteAurasDB
+
+DoiteAuras.lua
+
+Modules\DoiteEdit.lua
+Modules\DoiteConditions.lua
