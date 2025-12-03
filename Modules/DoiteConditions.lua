@@ -2278,50 +2278,51 @@ local function CheckAbilityConditions(data)
                     end
                 end
             end
-        else
-            -- ===== Normal usable logic (all other classes/spells) =====
-            local usable, noMana = _SafeSpellUsable(spellName, spellIndex, bookType)
+		else
+			-- ===== Normal usable logic (all other classes/spells) =====
+			local usable, noMana = _SafeSpellUsable(spellName, spellIndex, bookType)
 
-            if (usable ~= 1) or onCooldown then
-                show = false
-            else
-                -- === Usable special cases (guards) ===
-                if cls == "DRUID" and spellName == "Swiftmend" then
-                    local needs = { "Rejuvenation", "Regrowth" }
-                    local ok = false
+			if (usable ~= 1) or (noMana == 1) or onCooldown then
+				show = false
+			else
+				-- === Usable special cases (guards) ===
+				if cls == "DRUID" and spellName == "Swiftmend" then
+					local needs = { "Rejuvenation", "Regrowth" }
+					local ok = false
 
-                    if allowHelp and not allowSelf then
-                        if UnitExists("target")
-                           and UnitIsFriend("player","target")
-                           and (not UnitIsUnit("player","target")) then
-                            ok = _UnitHasAnyBuffName("target", needs)
-                        else
-                            ok = false
-                        end
+					if allowHelp and not allowSelf then
+						if UnitExists("target")
+						   and UnitIsFriend("player","target")
+						   and (not UnitIsUnit("player","target")) then
+							ok = _UnitHasAnyBuffName("target", needs)
+						else
+							ok = false
+						end
 
-                    elseif allowSelf and not (allowHelp or allowHarm) then
-                        ok = _UnitHasAnyBuffName("player", needs)
+					elseif allowSelf and not (allowHelp or allowHarm) then
+						ok = _UnitHasAnyBuffName("player", needs)
 
-                    else
-                        if UnitExists("target") then
-                            if UnitIsUnit("player","target") then
-                                ok = _UnitHasAnyBuffName("player", needs)
-                            elseif UnitIsFriend("player","target") then
-                                ok = _UnitHasAnyBuffName("target", needs)
-                            else
-                                ok = false
-                            end
-                        else
-                            ok = false
-                        end
-                    end
+					else
+						if UnitExists("target") then
+							if UnitIsUnit("player","target") then
+								ok = _UnitHasAnyBuffName("player", needs)
+							elseif UnitIsFriend("player","target") then
+								ok = _UnitHasAnyBuffName("target", needs)
+							else
+								ok = false
+							end
+						else
+							ok = false
+						end
+					end
 
-                    if not ok then
-                        show = false
-                    end
-                end
-            end
-        end
+					if not ok then
+						show = false
+					end
+				end
+			end
+		end
+
 
     elseif c.mode == "notcd" and spellIndex then
         if IsOnCooldown(spellIndex) then show = false end

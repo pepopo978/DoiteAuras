@@ -599,6 +599,17 @@ local function SetCombatFlag(typeTable, which, enabled)
 	SafeEvaluate()
 end
 
+local function SetExclusiveTargetMode(mode)
+    if not currentKey then return end
+    local d = EnsureDBEntry(currentKey)
+    if d and d.conditions and d.conditions.ability then
+        d.conditions.ability.target = nil
+    end
+    UpdateCondFrameForKey(currentKey)
+    SafeRefresh()
+    SafeEvaluate()
+end
+
 local function SetExclusiveAuraFoundMode(mode)
     if not currentKey then return end
     local d = EnsureDBEntry(currentKey)
@@ -636,18 +647,17 @@ local function _WhiteifyDDText(dd)
     end
 end
 
--- Only touch the text / placeholder when DISABLING.
 local function _SetDDEnabled(dd, enabled, placeholderText)
 	if not dd or not dd.GetName then return end
 	local name = dd:GetName()
 	local btn  = name and _G[name .. "Button"]
-
 	if enabled then
-		-- Enable button and keep whatever text _RestoreDD (or Init*) put there.
 		if btn and btn.Enable then btn:Enable() end
-		_GoldifyDD(dd)
+		if placeholderText and UIDropDownMenu_SetText then
+			UIDropDownMenu_SetText(placeholderText, dd)
+		end
+		_WhiteifyDDText(dd)
 	else
-		-- Disable and show the neutral placeholder.
 		if btn and btn.Disable then btn:Disable() end
 		if UIDropDownMenu_ClearAll then
 			pcall(UIDropDownMenu_ClearAll, dd)
@@ -930,7 +940,7 @@ local function CreateConditionsUI()
     condFrame.cond_ability_slider_grey = MakeCheck("DoiteCond_Ability_SliderGrey", "CD Grey", 220, row4_y)
     SetSeparator("ability", 4, "VISUAL EFFECTS", true, true)
 
-    -- ABILITY ROW: TARGET DISTANCE & TYPE (row 5, srow 5)
+    -- NEW ABILITY ROW: TARGET DISTANCE & TYPE (row 5, srow 5)
     SetSeparator("ability", 5, "TARGET DISTANCE & TYPE", true, true)
 
     condFrame.cond_ability_distanceDD = CreateFrame("Frame", "DoiteCond_Ability_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
@@ -1032,7 +1042,7 @@ local function CreateConditionsUI()
     condFrame.cond_aura_greyscale = MakeCheck("DoiteCond_Aura_Greyscale", "Grey", 70, row4_y)	
     SetSeparator("aura", 4, "VISUAL EFFECTS", true, true)
 
-    -- AURA ROW: TARGET DISTANCE & TYPE (row 5, srow 5)
+    -- NEW AURA ROW: TARGET DISTANCE & TYPE (row 5, srow 5)
     SetSeparator("aura", 5, "TARGET DISTANCE & TYPE", true, true)
 
     condFrame.cond_aura_distanceDD = CreateFrame("Frame", "DoiteCond_Aura_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
@@ -1182,12 +1192,13 @@ local function CreateConditionsUI()
     SetSeparator("item", 4, "TARGET CONDITIONS", true, true)
 
     -- Row 5: VISUAL EFFECTS
+    -- Row 5: VISUAL EFFECTS
     condFrame.cond_item_glow       = MakeCheck("DoiteCond_Item_Glow",      "Glow", 0,  row5_y)
     condFrame.cond_item_greyscale  = MakeCheck("DoiteCond_Item_Greyscale", "Grey", 70, row5_y)
     condFrame.cond_item_text_time  = MakeCheck("DoiteCond_Item_TextTime",  "Text: Remaining time", 140, row5_y)
     SetSeparator("item", 5, "VISUAL EFFECTS", true, true)
 
-    -- ITEM ROW: TARGET DISTANCE & TYPE (row 6, srow 6)
+    -- NEW ITEM ROW: TARGET DISTANCE & TYPE (row 6, srow 6)
     SetSeparator("item", 6, "TARGET DISTANCE & TYPE", true, true)
 
     condFrame.cond_item_distanceDD = CreateFrame("Frame", "DoiteCond_Item_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
@@ -1276,6 +1287,7 @@ local function CreateConditionsUI()
     condFrame.categoryCheck.text:SetText("Categorize")
     condFrame.categoryCheck.text:SetTextColor(1, 0.82, 0) -- yellow small text
 
+    -- Input for adding a new category
     condFrame.categoryInput = CreateFrame("EditBox", "DoiteCond_Category_Input", condFrame, "InputBoxTemplate")
     condFrame.categoryInput:SetAutoFocus(false)
     condFrame.categoryInput:SetHeight(18)
@@ -2455,22 +2467,19 @@ end)
     end
 
 	----------------------------------------------------------------
-    -- Target Distance & Type dropdowns (shared lists)
+    -- NEW: Target Distance & Type dropdowns (shared lists)
     ----------------------------------------------------------------
     local distanceChoices = { "Any", "In range", "Melee range", "Not in range", "Behind", "In front" }
     local singleAoeChoices = { "Any", "Single target", "AOE (Range)", "AOE (Melee)" }
 
     local unitTypeChoices = {
         "Any", "Players", "NPC",
-        "1. Humanoid", "2. Beast", "3. Dragonkin", "4. Undead",
-        "5. Demon", "6. Giant", "7. Mechanical", "8. Elemental",
+        "1. Humanoid", "2. Beast", "3. Demon", "4. Dragonkin",
+        "5. Elemental", "6. Giant", "7. Mechanical", "8. Undead",
         -- Multi: versions (like forms; add common combos)
         "Multi: 1+2",
-		"Multi: 1+4",
-		"Multi: 1+2+3",
-        "Multi: 2+3",
-		"Multi: 4+5",
-		"Multi: 5+8"
+        "Multi: 1+3",
+		"Multi: 7+8"
     }
 
     local function _CommitTargetField(typeKey, field, picked)
@@ -4531,12 +4540,12 @@ local function UpdateConditionsUI(data)
 		if condFrame.cond_aura_cp_val_enter then condFrame.cond_aura_cp_val_enter:Hide() end
 		if condFrame.cond_aura_class_note then condFrame.cond_aura_class_note:Hide() end
 
-        -- hide aura target distance/type row when not editing an aura
+        -- NEW: hide aura target distance/type row when not editing an aura
         if condFrame.cond_aura_distanceDD  then condFrame.cond_aura_distanceDD:Hide()  end
         if condFrame.cond_aura_singleAoeDD then condFrame.cond_aura_singleAoeDD:Hide() end
         if condFrame.cond_aura_unitTypeDD  then condFrame.cond_aura_unitTypeDD:Hide()  end
 		
-		-- also hide item target distance/type row when not editing an item
+		-- NEW: also hide item target distance/type row when not editing an item
         if condFrame.cond_item_distanceDD  then condFrame.cond_item_distanceDD:Hide()  end
         if condFrame.cond_item_singleAoeDD then condFrame.cond_item_singleAoeDD:Hide() end
         if condFrame.cond_item_unitTypeDD  then condFrame.cond_item_unitTypeDD:Hide()  end
@@ -4605,6 +4614,20 @@ local function UpdateConditionsUI(data)
             if not cb then return end
             cb:Disable()
             if cb.text and cb.text.SetTextColor then cb.text:SetTextColor(0.6, 0.6, 0.6) end
+        end
+        local function _enDD(dd)
+            if not dd then return end
+            local btn = _G[dd:GetName().."Button"]
+            local txt = _G[dd:GetName().."Text"]
+            if btn and btn.Enable then btn:Enable() end
+            if txt and txt.SetTextColor then txt:SetTextColor(1, 0.82, 0) end
+        end
+        local function _disDD(dd)
+            if not dd then return end
+            local btn = _G[dd:GetName().."Button"]
+            local txt = _G[dd:GetName().."Text"]
+            if btn and btn.Disable then btn:Disable() end
+            if txt and txt.SetTextColor then txt:SetTextColor(0.6, 0.6, 0.6) end
         end
 
         -- WHEREABOUTS / INVENTORY SLOT (special items)
@@ -5055,12 +5078,12 @@ local function UpdateConditionsUI(data)
         condFrame.cond_aura_cp_val:Hide()
 		condFrame.cond_aura_cp_val_enter:Hide()
 
-        -- hide aura target distance/type row when not editing an aura
+        -- NEW: hide aura target distance/type row when not editing an aura
         if condFrame.cond_aura_distanceDD  then condFrame.cond_aura_distanceDD:Hide()  end
         if condFrame.cond_aura_singleAoeDD then condFrame.cond_aura_singleAoeDD:Hide() end
         if condFrame.cond_aura_unitTypeDD  then condFrame.cond_aura_unitTypeDD:Hide()  end
 		
-		-- hide ability target distance/type row when not editing an ability
+		-- NEW: hide ability target distance/type row when not editing an ability
         if condFrame.cond_ability_distanceDD  then condFrame.cond_ability_distanceDD:Hide()  end
         if condFrame.cond_ability_singleAoeDD then condFrame.cond_ability_singleAoeDD:Hide() end
         if condFrame.cond_ability_unitTypeDD  then condFrame.cond_ability_unitTypeDD:Hide()  end
@@ -5094,6 +5117,13 @@ local function UpdateConditionsUI(data)
             local txt = _G[dd:GetName().."Text"]
             if btn and btn.Enable then btn:Enable() end
             if txt and txt.SetTextColor then txt:SetTextColor(1, 0.82, 0) end
+        end
+        local function _disableDD(dd)
+            if not dd then return end
+            local btn = _G[dd:GetName().."Button"]
+            local txt = _G[dd:GetName().."Text"]
+            if btn and btn.Disable then btn:Disable() end
+            if txt and txt.SetTextColor then txt:SetTextColor(0.6, 0.6, 0.6) end
         end
         local function _hideRemInputs()
             condFrame.cond_aura_remaining_comp:Hide()
@@ -5830,6 +5860,7 @@ function DoiteConditions_Show(key)
 		-- When the conditions editor hides by any means, drop the edit override
 		condFrame:SetScript("OnHide", function()
 					_G["DoiteEdit_CurrentKey"] = nil
+					-- allow announcing again next time we open an editor
 					lastAnnouncedKey = nil
 
 					-- kick a repaint so the formerly-forced icon can hide if conditions say so
