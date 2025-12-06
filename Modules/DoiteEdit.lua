@@ -126,7 +126,6 @@ local function EnsureDBEntry(key)
         if d.conditions.ability.form        == nil then d.conditions.ability.form        = "All"   end
 
         if d.conditions.ability.targetDistance == nil then d.conditions.ability.targetDistance = nil end
-        if d.conditions.ability.targetSingleAOE == nil then d.conditions.ability.targetSingleAOE = nil end
         if d.conditions.ability.targetUnitType  == nil then d.conditions.ability.targetUnitType  = nil end
 		if d.conditions.ability.weaponFilter == nil then d.conditions.ability.weaponFilter = nil end
 
@@ -160,7 +159,6 @@ local function EnsureDBEntry(key)
 		if ic.form          == nil then ic.form          = "All"   end
 
         if ic.targetDistance == nil then ic.targetDistance = nil end
-        if ic.targetSingleAOE == nil then ic.targetSingleAOE = nil end
         if ic.targetUnitType  == nil then ic.targetUnitType  = nil end
 		if ic.weaponFilter == nil then ic.weaponFilter = nil end
 
@@ -185,7 +183,6 @@ local function EnsureDBEntry(key)
         if d.conditions.aura.form        == nil then d.conditions.aura.form        = "All"   end
 
         if d.conditions.aura.targetDistance == nil then d.conditions.aura.targetDistance = nil end
-        if d.conditions.aura.targetSingleAOE == nil then d.conditions.aura.targetSingleAOE = nil end
         if d.conditions.aura.targetUnitType  == nil then d.conditions.aura.targetUnitType  = nil end
 		if d.conditions.aura.weaponFilter == nil then d.conditions.aura.weaponFilter = nil end
 
@@ -1049,15 +1046,11 @@ local function CreateConditionsUI()
 
     condFrame.cond_ability_distanceDD = CreateFrame("Frame", "DoiteCond_Ability_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
     condFrame.cond_ability_distanceDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", -15, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_ability_distanceDD) end
-
-    condFrame.cond_ability_singleAoeDD = CreateFrame("Frame", "DoiteCond_Ability_SingleAOEDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_ability_singleAoeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 85, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_ability_singleAoeDD) end
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_ability_distanceDD) end
 
     condFrame.cond_ability_unitTypeDD = CreateFrame("Frame", "DoiteCond_Ability_UnitTypeDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_ability_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 185, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_ability_unitTypeDD) end
+    condFrame.cond_ability_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 120, row6_y+3)
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_ability_unitTypeDD) end
 
     condFrame.cond_ability_slider = MakeCheck("DoiteCond_Ability_Slider", "Soon off CD indicator", 0, row7_y)
     condFrame.cond_ability_slider_dir = CreateFrame("Frame", "DoiteCond_Ability_SliderDir", _Parent(), "UIDropDownMenuTemplate")
@@ -1165,15 +1158,11 @@ local function CreateConditionsUI()
 
     condFrame.cond_aura_distanceDD = CreateFrame("Frame", "DoiteCond_Aura_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
     condFrame.cond_aura_distanceDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", -15, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_aura_distanceDD) end
-
-    condFrame.cond_aura_singleAoeDD = CreateFrame("Frame", "DoiteCond_Aura_SingleAOEDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_aura_singleAoeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 85, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_aura_singleAoeDD) end
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_aura_distanceDD) end
 
     condFrame.cond_aura_unitTypeDD = CreateFrame("Frame", "DoiteCond_Aura_UnitTypeDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_aura_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 185, row6_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_aura_unitTypeDD) end
+    condFrame.cond_aura_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 120, row6_y+3)
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_aura_unitTypeDD) end
 
     condFrame.cond_aura_power = MakeCheck("DoiteCond_Aura_PowerCB", "Power", 0, row7_y)
     condFrame.cond_aura_power_comp = MakeComparatorDD("DoiteCond_Aura_PowerComp", 65, row7_y+3, 50)
@@ -1332,15 +1321,11 @@ local function CreateConditionsUI()
 
     condFrame.cond_item_distanceDD = CreateFrame("Frame", "DoiteCond_Item_DistanceDD", _Parent(), "UIDropDownMenuTemplate")
     condFrame.cond_item_distanceDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", -15, row7_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_item_distanceDD) end
-
-    condFrame.cond_item_singleAoeDD = CreateFrame("Frame", "DoiteCond_Item_SingleAOEDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_item_singleAoeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 85, row7_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_item_singleAoeDD) end
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_item_distanceDD) end
 
     condFrame.cond_item_unitTypeDD = CreateFrame("Frame", "DoiteCond_Item_UnitTypeDD", _Parent(), "UIDropDownMenuTemplate")
-    condFrame.cond_item_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 185, row7_y+3)
-    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 75, condFrame.cond_item_unitTypeDD) end
+    condFrame.cond_item_unitTypeDD:SetPoint("TOPLEFT", _Parent(), "TOPLEFT", 120, row7_y+3)
+    if UIDropDownMenu_SetWidth then pcall(UIDropDownMenu_SetWidth, 100, condFrame.cond_item_unitTypeDD) end
 
     -- RESOURCE (Power)
     condFrame.cond_item_power      = MakeCheck("DoiteCond_Item_PowerCB", "Power", 0, row8_y)
@@ -2681,7 +2666,7 @@ end)
     -- Target Distance & Type dropdowns (shared lists)
     ----------------------------------------------------------------
     local distanceChoices = { "Any", "In range", "Melee range", "Not in range", "Behind", "In front" }
-    local singleAoeChoices = { "Any", "Single target", "AOE (Range)", "AOE (Melee)" }
+    local singleAoeChoices = { "Any", "Single target", "AOE (Radius ~10 yards - eg. Blizzard)", "AOE (Melee ~5 yards)" }
 
     local unitTypeChoices = {
         "Any", "Players", "NPC",
@@ -2758,17 +2743,14 @@ end)
 
     -- Ability DDs
     InitSimpleListDD(condFrame.cond_ability_distanceDD,   distanceChoices, "ability", "targetDistance",   "Distance")
-    InitSimpleListDD(condFrame.cond_ability_singleAoeDD,  singleAoeChoices,"ability", "targetSingleAOE",  "Single/AOE")
     InitSimpleListDD(condFrame.cond_ability_unitTypeDD,   unitTypeChoices, "ability", "targetUnitType",   "Unit type")
 
     -- Aura DDs
     InitSimpleListDD(condFrame.cond_aura_distanceDD,      distanceChoices, "aura",    "targetDistance",   "Distance")
-    InitSimpleListDD(condFrame.cond_aura_singleAoeDD,     singleAoeChoices,"aura",    "targetSingleAOE",  "Single/AOE")
     InitSimpleListDD(condFrame.cond_aura_unitTypeDD,      unitTypeChoices, "aura",    "targetUnitType",   "Unit type")
 
     -- Item DDs
     InitSimpleListDD(condFrame.cond_item_distanceDD,      distanceChoices, "item",    "targetDistance",   "Distance")
-    InitSimpleListDD(condFrame.cond_item_singleAoeDD,     singleAoeChoices,"item",    "targetSingleAOE",  "Single/AOE")
     InitSimpleListDD(condFrame.cond_item_unitTypeDD,      unitTypeChoices, "item",    "targetUnitType",   "Unit type")
 
     -- slider direction dd
@@ -3365,11 +3347,9 @@ end)
 	if condFrame.cond_ability_weaponDD then condFrame.cond_ability_weaponDD:Hide() end
 
     if condFrame.cond_ability_distanceDD   then condFrame.cond_ability_distanceDD:Hide()   end
-    if condFrame.cond_ability_singleAoeDD  then condFrame.cond_ability_singleAoeDD:Hide()  end
     if condFrame.cond_ability_unitTypeDD   then condFrame.cond_ability_unitTypeDD:Hide()   end
 	
 	if condFrame.cond_aura_distanceDD  then condFrame.cond_aura_distanceDD:Hide()  end
-	if condFrame.cond_aura_singleAoeDD then condFrame.cond_aura_singleAoeDD:Hide() end
 	if condFrame.cond_aura_unitTypeDD  then condFrame.cond_aura_unitTypeDD:Hide()  end
 
     -- Category widgets start hidden; UpdateConditionsUI will toggle them
@@ -3414,7 +3394,6 @@ end)
     condFrame.cond_aura_mine:Hide()
     if condFrame.cond_aura_owner_tip then condFrame.cond_aura_owner_tip:Hide() end
     if condFrame.cond_aura_distanceDD   then condFrame.cond_aura_distanceDD:Hide()   end
-    if condFrame.cond_aura_singleAoeDD  then condFrame.cond_aura_singleAoeDD:Hide()  end
     if condFrame.cond_aura_unitTypeDD   then condFrame.cond_aura_unitTypeDD:Hide()   end
 	if condFrame.cond_aura_weaponDD then condFrame.cond_aura_weaponDD:Hide() end
 	
@@ -4561,7 +4540,6 @@ local function UpdateConditionsUI(data)
 		        -- === TARGET DISTANCE & TYPE (Ability) ===
         if condFrame.cond_ability_distanceDD then
             condFrame.cond_ability_distanceDD:Show()
-            condFrame.cond_ability_singleAoeDD:Show()
             condFrame.cond_ability_unitTypeDD:Show()
 
             local a = c.ability or {}
@@ -4588,7 +4566,6 @@ local function UpdateConditionsUI(data)
             end
 
             _RestoreDD(condFrame.cond_ability_distanceDD,  a.targetDistance,   "Distance")
-            _RestoreDD(condFrame.cond_ability_singleAoeDD, a.targetSingleAOE,  "Single/AOE")
             _RestoreDD(condFrame.cond_ability_unitTypeDD,  a.targetUnitType,   "Unit type")
 
             -- Grey out and make unselectable when Target (self) is active
@@ -4605,11 +4582,9 @@ local function UpdateConditionsUI(data)
 
                 -- reset visible state and disable
                 _SetDDEnabled(condFrame.cond_ability_distanceDD,  false, "Distance")
-                _SetDDEnabled(condFrame.cond_ability_singleAoeDD, false, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_ability_unitTypeDD,  false, "Unit type")
             else
                 _SetDDEnabled(condFrame.cond_ability_distanceDD,  true, "Distance")
-                _SetDDEnabled(condFrame.cond_ability_singleAoeDD, true, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_ability_unitTypeDD,  true, "Unit type")
             end
         end
@@ -4896,12 +4871,10 @@ local function UpdateConditionsUI(data)
 
         -- hide aura target distance/type row when not editing an aura
         if condFrame.cond_aura_distanceDD  then condFrame.cond_aura_distanceDD:Hide()  end
-        if condFrame.cond_aura_singleAoeDD then condFrame.cond_aura_singleAoeDD:Hide() end
         if condFrame.cond_aura_unitTypeDD  then condFrame.cond_aura_unitTypeDD:Hide()  end
 		
 		-- also hide item target distance/type row when not editing an item
         if condFrame.cond_item_distanceDD  then condFrame.cond_item_distanceDD:Hide()  end
-        if condFrame.cond_item_singleAoeDD then condFrame.cond_item_singleAoeDD:Hide() end
         if condFrame.cond_item_unitTypeDD  then condFrame.cond_item_unitTypeDD:Hide()  end
 		
 		if condFrame.cond_aura_mine then condFrame.cond_aura_mine:Hide() end
@@ -5083,7 +5056,6 @@ local function UpdateConditionsUI(data)
         -- === TARGET DISTANCE & TYPE (Item) ===
         if condFrame.cond_item_distanceDD then
             condFrame.cond_item_distanceDD:Show()
-            condFrame.cond_item_singleAoeDD:Show()
             condFrame.cond_item_unitTypeDD:Show()
 
             local function _RestoreItemDD(dd, val, placeholder)
@@ -5112,8 +5084,7 @@ local function UpdateConditionsUI(data)
             _RestoreItemDD(condFrame.cond_item_distanceDD, nil, "Distance")
             _SetDDEnabled(condFrame.cond_item_distanceDD, false, "Distance")
 
-            -- Single/AOE + UnitType still follow the old rules
-            _RestoreItemDD(condFrame.cond_item_singleAoeDD, ic.targetSingleAOE, "Single/AOE")
+            -- UnitType still follow the old rules
             _RestoreItemDD(condFrame.cond_item_unitTypeDD,  ic.targetUnitType,  "Unit type")
 
             local isMissingForDD = (ic.whereMissing == true)
@@ -5123,10 +5094,8 @@ local function UpdateConditionsUI(data)
                 ic.targetSingleAOE = nil
                 ic.targetUnitType  = nil
 
-                _SetDDEnabled(condFrame.cond_item_singleAoeDD, false, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_item_unitTypeDD,  false, "Unit type")
             else
-                _SetDDEnabled(condFrame.cond_item_singleAoeDD, true, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_item_unitTypeDD,  true, "Unit type")
             end
         end
@@ -5467,12 +5436,10 @@ local function UpdateConditionsUI(data)
 
         -- hide aura target distance/type row when not editing an aura
         if condFrame.cond_aura_distanceDD  then condFrame.cond_aura_distanceDD:Hide()  end
-        if condFrame.cond_aura_singleAoeDD then condFrame.cond_aura_singleAoeDD:Hide() end
         if condFrame.cond_aura_unitTypeDD  then condFrame.cond_aura_unitTypeDD:Hide()  end
 		
 		-- hide ability target distance/type row when not editing an ability
         if condFrame.cond_ability_distanceDD  then condFrame.cond_ability_distanceDD:Hide()  end
-        if condFrame.cond_ability_singleAoeDD then condFrame.cond_ability_singleAoeDD:Hide() end
         if condFrame.cond_ability_unitTypeDD  then condFrame.cond_ability_unitTypeDD:Hide()  end
 
 		condFrame.cond_aura_mine:Hide()
@@ -5580,7 +5547,6 @@ local function UpdateConditionsUI(data)
         -- === TARGET DISTANCE & TYPE (Aura) ===
         if condFrame.cond_aura_distanceDD then
             condFrame.cond_aura_distanceDD:Show()
-            condFrame.cond_aura_singleAoeDD:Show()
             condFrame.cond_aura_unitTypeDD:Show()
 
             local a = c.aura or {}
@@ -5611,20 +5577,17 @@ local function UpdateConditionsUI(data)
             _RestoreAuraDD(condFrame.cond_aura_distanceDD, nil, "Distance")
             _SetDDEnabled(condFrame.cond_aura_distanceDD, false, "Distance")
 
-            -- Single/AOE + UnitType remain usable
-            _RestoreAuraDD(condFrame.cond_aura_singleAoeDD, a.targetSingleAOE, "Single/AOE")
+            -- UnitType remain usable
             _RestoreAuraDD(condFrame.cond_aura_unitTypeDD,  a.targetUnitType,  "Unit type")
 
-            -- Self-only target: Single/AOE / UnitType are meaningless
+            -- Self-only target: UnitType are meaningless
             local isSelfOnly = (a.targetSelf == true)
             if isSelfOnly then
                 a.targetSingleAOE  = nil
                 a.targetUnitType   = nil
 
-                _SetDDEnabled(condFrame.cond_aura_singleAoeDD, false, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_aura_unitTypeDD,  false, "Unit type")
             else
-                _SetDDEnabled(condFrame.cond_aura_singleAoeDD, true, "Single/AOE")
                 _SetDDEnabled(condFrame.cond_aura_unitTypeDD,  true, "Unit type")
             end
         end
@@ -6094,12 +6057,10 @@ local function UpdateConditionsUI(data)
 
         -- hide ability DDs when not editing an ability
         if condFrame.cond_ability_distanceDD  then condFrame.cond_ability_distanceDD:Hide()  end
-        if condFrame.cond_ability_singleAoeDD then condFrame.cond_ability_singleAoeDD:Hide() end
         if condFrame.cond_ability_unitTypeDD  then condFrame.cond_ability_unitTypeDD:Hide()  end
 
         -- hide item DDs when not editing an item
 		if condFrame.cond_item_distanceDD   then condFrame.cond_item_distanceDD:Hide()   end
-		if condFrame.cond_item_singleAoeDD  then condFrame.cond_item_singleAoeDD:Hide()  end
 		if condFrame.cond_item_unitTypeDD   then condFrame.cond_item_unitTypeDD:Hide()   end
     end
 	_ReflowCondAreaHeight()

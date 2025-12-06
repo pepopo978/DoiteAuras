@@ -1992,6 +1992,37 @@ local function _PassesTargetDistance(condTbl, unit, spellName)
     return true
 end
 
+-- Simple "target alive / dead" helper
+local function _PassesTargetStatus(condTbl, unit)
+    if not condTbl or not unit then return true end
+
+    local wantAlive = (condTbl.targetAlive == true)
+    local wantDead  = (condTbl.targetDead  == true)
+
+    -- If neither flag is set, do not gate.
+    if not wantAlive and not wantDead then
+        return true
+    end
+
+    if not UnitExists or not UnitExists(unit) then
+        -- No real target: don't kill the icon purely on this.
+        return true
+    end
+
+    local isDead = (UnitIsDead and UnitIsDead(unit) == 1) and true or false
+
+    -- UI should keep these mutually exclusive, but be robust anyway.
+    if wantAlive and wantDead then
+        return true
+    elseif wantAlive then
+        return (not isDead)
+    elseif wantDead then
+        return isDead
+    end
+
+    return true
+end
+
 -- Parse "Multi: 1+2+3" → { "Humanoid","Beast","Dragonkin" }
 local function _ParseMultiUnitTypes(val)
     local wanted, seen = {}, {}
@@ -2156,6 +2187,152 @@ local function _PassesTargetSingleAOE(condTbl, unit, spellName)
     elseif val == "AOE (Melee)" then
         -- Require at least one neighbor within melee-AoE radius
         return nearest <= aoeMelee
+    end
+
+    return true
+end
+
+-- === Weapon filter helpers (Two-Hand / Shield / Dual-Wield) =============
+
+local function _ClassifyEquippedSlot(slot)
+    if not slot or not GetInventoryItemLink or type(GetItemInfo) ~= "function" then
+        return nil
+    end
+
+    local link = GetInventoryItemLink("player", slot)
+    if not link then
+        return nil
+    end
+
+    -- Use the same itemID parsing you tested in /run
+    local itemId = tonumber(str_match(link, "item:(%d+)"))
+    if not itemId then
+        -- We know something is equipped, but we can’t classify it yet
+        return { hasItem = true }
+    end
+
+    -- xp3-style GetItemInfo: name, link, quality, level, itemType, itemSubType, stack
+    local _, _, _, _, itemType, itemSubType = GetItemInfo(itemId)
+    if not itemType or itemType == "" then
+        -- ItemInfo not cached yet; treat as "unknown weapon state"
+        return { hasItem = true }
+    end
+
+    local isShield  = false
+    local isTwoHand = false
+    local isWeapon  = false
+
+    -- Shields are Armor / Shields
+    if itemType == "Armor" and itemSubType == "Shields" then
+        isShield = true
+    end
+
+    -- All actual weapons share itemType == "Weapon"
+    if itemType == "Weapon" then
+        isWeapon = true
+
+        if itemSubType then
+            -- “Two-Handed Maces”, “Two-Handed Swords”, etc.
+            if str_find(itemSubType, "Two%-Handed") then
+                isTwoHand = true
+            -- 2H melee families that don’t carry the “Two-Handed” prefix
+            elseif itemSubType == "Staves"
+               or itemSubType == "Polearms"
+               or itemSubType == "Fishing Poles" then
+                isTwoHand = true
+            end
+        end
+    end
+
+    return {
+        hasItem  = true,
+        isShield = isShield,
+        isTwoHand = isTwoHand,
+        isWeapon = isWeapon,
+    }
+end
+
+local function _GetEquippedWeaponState()
+    -- Returns hasTwoHand, hasShieldOffhand, isDualWield; nil,nil,nil if
+    -- we cannot inspect inventory at all.
+    if not GetInventoryItemLink or type(GetItemInfo) ~= "function" then
+        return nil, nil, nil
+    end
+
+    local main = _ClassifyEquippedSlot(INV_SLOT_MAINHAND)
+    local off  = _ClassifyEquippedSlot(INV_SLOT_OFFHAND)
+
+    if not main and not off then
+        return nil, nil, nil
+    end
+
+    local hasTwoHand = false
+    local hasShield  = false
+    local isDual     = false
+
+    if main and main.isTwoHand then
+        hasTwoHand = true
+    end
+
+    if off and off.isShield then
+        hasShield = true
+    end
+
+    -- Dual wield = both hands have real weapons, and offhand is not a shield
+    if main and main.isWeapon and off and off.isWeapon and not off.isShield then
+        isDual = true
+    end
+
+    return hasTwoHand, hasShield, isDual
+end
+
+local function _NormalizeWeaponFilter(mode)
+    if not mode or mode == "" then return nil end
+    local s = string.lower(mode)
+    s = string.gsub(s, "%s+", "")
+    s = string.gsub(s, "%-", "")
+
+    -- Accept "Two-Hand", "Two hand", "2 hand", "2H", etc.
+    if s == "twohand" or s == "2hand" or s == "2h" then
+        return "2H"
+    -- Accept "Shield", "shield"
+    elseif s == "shield" or s == "sh" then
+        return "SH"
+    -- Accept "Dual-Wield", "Dual wield", "DW", etc.
+    elseif s == "dualwield" or s == "dual" or s == "dw" then
+        return "DW"
+    end
+    return nil
+end
+
+local function _PassesWeaponFilter(condTbl)
+    if not condTbl then return true end
+
+    local norm = _NormalizeWeaponFilter(condTbl.weaponFilter)
+    if not norm then
+        -- No filter configured or unknown label -> don't gate
+        return true
+    end
+
+    -- Only meaningful for Warrior / Paladin / Shaman
+    local _, cls = UnitClass("player")
+    cls = cls and string.upper(cls) or ""
+    if cls ~= "WARRIOR" and cls ~= "PALADIN" and cls ~= "SHAMAN" then
+        return true
+    end
+
+    local hasTwoHand, hasShield, isDual = _GetEquippedWeaponState()
+    if hasTwoHand == nil and hasShield == nil and isDual == nil then
+        -- Inventory APIs unavailable; don't kill icons
+        return true
+    end
+
+    if norm == "2H" then
+        return hasTwoHand
+    elseif norm == "SH" then
+        return hasShield
+    elseif norm == "DW" then
+        return isDual
     end
 
     return true
@@ -2778,10 +2955,9 @@ local function _IconHasTargetMods_AbilityOrItem(data)
     if not c then return false end
 
     local td = _NormalizeTargetField(c.targetDistance)
-    local ts = _NormalizeTargetField(c.targetSingleAOE)
     local tu = _NormalizeTargetField(c.targetUnitType)
 
-    return (td ~= nil) or (ts ~= nil) or (tu ~= nil)
+    return (td ~= nil) or (tu ~= nil)
 end
 
 local function _IconHasTargetMods_Aura(data)
@@ -2791,10 +2967,9 @@ local function _IconHasTargetMods_Aura(data)
     local c = data.conditions.aura
 
     local td = _NormalizeTargetField(c.targetDistance)
-    local ts = _NormalizeTargetField(c.targetSingleAOE)
     local tu = _NormalizeTargetField(c.targetUnitType)
 
-    return (td ~= nil) or (ts ~= nil) or (tu ~= nil)
+    return (td ~= nil) or (tu ~= nil)
 end
 
 local function _RebuildTargetModsFlags()
@@ -2993,8 +3168,8 @@ local function CheckAbilityConditions(data)
         show = false
     end
 
-    -- === Target Distance / AoE / UnitType (ability) ======================
-    if show and (c.targetDistance or c.targetSingleAOE or c.targetUnitType) then
+    -- === Target status / Distance / UnitType (ability) ===================
+    if show and (c.targetDistance or c.targetUnitType or c.targetAlive or c.targetDead) then
         local unitForTarget = nil
 
         -- If we have a target and either explicit flags or no flags at all,
@@ -3004,19 +3179,29 @@ local function CheckAbilityConditions(data)
         end
 
         if unitForTarget then
-            if not _PassesTargetDistance(c, unitForTarget, spellName) then
+            -- 1) Alive / dead requirement (if configured)
+            if not _PassesTargetStatus(c, unitForTarget) then
                 show = false
+            -- 2) Range filter (if configured)
+            elseif not _PassesTargetDistance(c, unitForTarget, spellName) then
+                show = false
+            -- 3) Unit-type filter (if configured)
             elseif not _PassesTargetUnitType(c, unitForTarget) then
-                show = false
-            elseif not _PassesTargetSingleAOE(c, unitForTarget, spellName) then
                 show = false
             end
         end
     end
 
-    -- === 4. Form / Stance requirement (if set)
+    -- === Form / Stance requirement (if set)
     if show and c.form and c.form ~= "All" then
         if not _PassesFormRequirement(c.form, auraSnapshot) then
+            show = false
+        end
+    end
+
+    -- === Weapon filter (Two-Hand / Shield / Dual-Wield) ===
+    if show and c.weaponFilter and c.weaponFilter ~= "" then
+        if not _PassesWeaponFilter(c) then
             show = false
         end
     end
@@ -3209,36 +3394,47 @@ local function CheckItemConditions(data)
     end
 	
 	-- --------------------------------------------------------------------
-    -- 3b. Target Distance / AoE / UnitType (items)
+    -- Target status / Distance / UnitType (items)
     -- --------------------------------------------------------------------
-    if show and (c.targetDistance or c.targetSingleAOE or c.targetUnitType) then
+    if show and (c.targetDistance or c.targetUnitType or c.targetAlive or c.targetDead) then
         local unitForTarget = nil
 
         -- Same idea as abilities: if we have a target, use it as the reference
-        -- for distance / cluster / unit-type checks.
+        -- for distance / unit-type checks.
         if UnitExists("target") then
             unitForTarget = "target"
         end
 
         if unitForTarget then
-            if not _PassesTargetDistance(c, unitForTarget, nil) then
+            -- Alive / dead requirement (if configured)
+            if not _PassesTargetStatus(c, unitForTarget) then
+                show = false
+            elseif not _PassesTargetDistance(c, unitForTarget, nil) then
                 show = false
             elseif not _PassesTargetUnitType(c, unitForTarget) then
-                show = false
-            elseif not _PassesTargetSingleAOE(c, unitForTarget, nil) then
                 show = false
             end
         end
     end
 
     -- --------------------------------------------------------------------
-    -- 4. Form / stance requirement
+    -- Weapon filter (Two-Hand / Shield / Dual-Wield)
+    -- --------------------------------------------------------------------
+    if show and c.weaponFilter and c.weaponFilter ~= "" then
+        if not _PassesWeaponFilter(c) then
+            show = false
+        end
+    end
+
+    -- --------------------------------------------------------------------
+    -- Form / stance requirement
     -- --------------------------------------------------------------------
     if show and c.form and c.form ~= "All" then
         if not _PassesFormRequirement(c.form, auraSnapshot) then
             show = false
         end
     end
+
 
     -- --------------------------------------------------------------------
     -- 5. HP threshold (my / target) – same logic as abilities
@@ -3523,6 +3719,13 @@ local function CheckAuraConditions(data)
         end
     end
 
+    -- === Weapon filter (Two-Hand / Shield / Dual-Wield) ===
+    if show and c.weaponFilter and c.weaponFilter ~= "" then
+        if not _PassesWeaponFilter(c) then
+            show = false
+        end
+    end
+
     -- === Power threshold (% of max) — same semantics as abilities
     if show and c.powerEnabled
        and c.powerComp and c.powerComp ~= ""
@@ -3714,10 +3917,9 @@ local function CheckAuraConditions(data)
         end
     end
 
-    -- === Target Distance / AoE / UnitType (auras) =========================
-    if show and (c.targetDistance or c.targetSingleAOE or c.targetUnitType) then
-        -- For aura icons we only apply these when we're looking at a real target
-        -- (help/harm). Pure self-aura icons usually don't care about range/cluster.
+    -- === Target status / Distance / UnitType (auras) ======================
+    if show and (c.targetDistance or c.targetUnitType or c.targetAlive or c.targetDead) then
+        -- For aura icons only apply these when looking at a real target (help/harm). Pure self-aura icons usually don't care about range.
         local unitForTargetMods = nil
         local allowHelp = (c.targetHelp == true)
         local allowHarm = (c.targetHarm == true)
@@ -3728,11 +3930,12 @@ local function CheckAuraConditions(data)
         end
 
         if unitForTargetMods then
-            if not _PassesTargetDistance(c, unitForTargetMods, nil) then
+            -- Alive / dead requirement (if configured)
+            if not _PassesTargetStatus(c, unitForTargetMods) then
+                show = false
+            elseif not _PassesTargetDistance(c, unitForTargetMods, nil) then
                 show = false
             elseif not _PassesTargetUnitType(c, unitForTargetMods) then
-                show = false
-            elseif not _PassesTargetSingleAOE(c, unitForTargetMods, nil) then
                 show = false
             end
         end
