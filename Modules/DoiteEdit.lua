@@ -1175,7 +1175,7 @@ local function CreateConditionsUI()
 	
 	-- Ability: dynamic Aura Conditions section
     local abilityAuraBaseY = row12_y
-    SetSeparator("ability", 12, "ABILITY, BUFF & DEBUFF CONDITIONS", true, true)
+    SetSeparator("ability", 12, "ABILITY, BUFF, DEBUFF & TALENT CONDITIONS", true, true)
     condFrame.abilityAuraAnchor = CreateFrame("Frame", nil, _Parent())
     condFrame.abilityAuraAnchor:SetPoint("TOPLEFT",  _Parent(), "TOPLEFT",  0, abilityAuraBaseY)
     condFrame.abilityAuraAnchor:SetPoint("TOPRIGHT", _Parent(), "TOPRIGHT", 0, abilityAuraBaseY)
@@ -1311,7 +1311,7 @@ local function CreateConditionsUI()
     condFrame.cond_aura_class_note:SetText("No class-specific option added for your class.")
     condFrame.cond_aura_class_note:Hide()
 	
-    local sepAuraBuff = SetSeparator("aura", 13, "ABILITY, BUFF & DEBUFF CONDITIONS", true, true)
+    local sepAuraBuff = SetSeparator("aura", 13, "ABILITY, BUFF, DEBUFF & TALENT CONDITIONS", true, true)
     if sepAuraBuff and srows then
         local newY = (srows[13] or 0) - 10
         sepAuraBuff:ClearAllPoints()
@@ -1450,7 +1450,7 @@ local function CreateConditionsUI()
 	
 	-- Item: dynamic Aura Conditions section
     local itemAuraBaseY = row12_y
-    SetSeparator("item", 12, "ABILITY, BUFF & DEBUFF CONDITIONS", true, true)
+    SetSeparator("item", 12, "ABILITY, BUFF, DEBUFF & TALENT CONDITIONS", true, true)
     condFrame.itemAuraAnchor = CreateFrame("Frame", nil, _Parent())
     condFrame.itemAuraAnchor:SetPoint("TOPLEFT",  _Parent(), "TOPLEFT",  0, itemAuraBaseY)
     condFrame.itemAuraAnchor:SetPoint("TOPRIGHT", _Parent(), "TOPRIGHT", 0, itemAuraBaseY)
@@ -3806,6 +3806,29 @@ do
 
             -- Example: [blue]Ability|r | [yellow]Not on cooldown|r: [white]Sinister Strike|r
             return typePart .. " " .. sep .. modePart .. ": " .. namePart
+
+        elseif buffType == "TALENT" then
+            -- Talent rows: mode stored as "Known" or "Not known"
+            local modeStr = mode or ""
+            local lower   = string.lower(modeStr)
+
+            local isKnown = (lower == "known")
+            local stateWord
+            if isKnown then
+                stateWord = "Known"
+            else
+                stateWord = "Not known"
+            end
+
+            local stateColor = isKnown and "|cff00ff00" or "|cffff0000"
+            local statePart  = stateColor .. stateWord .. "|r"
+
+            -- Talent (yellow)
+            local talentPart = yellow .. "Talent" .. "|r"
+            local namePart   = white .. (niceName or "") .. "|r"
+
+            --   Talent (yellow) | Known/Not known (green/red): Name (white)
+            return talentPart .. " " .. sep .. statePart .. ": " .. namePart
         end
 
         -- Default: Buff / Debuff aura rows
@@ -3835,141 +3858,175 @@ do
         return typePart .. " " .. sep .. modePart .. " " .. sep .. unitPart .. ": " .. namePart
     end
 
-    local function AuraCond_SetRowState(row, state)
-        row._state = state
+	local function AuraCond_SetRowState(row, state)
+		row._state = state
 
-        -- hide everything by default
-        row.btn1:Hide()
-        row.btn2:Hide()
-        row.closeBtn:Show() -- always visible
-        row.editBox:Hide()
-        row.addButton:Hide()
-        row.labelFS:Hide()
-        if row.abilityDD then
-            row.abilityDD:Hide()
-        end
+		-- hide everything by default
+		row.btn1:Hide()
+		row.btn2:Hide()
+		if row.btn3 then row.btn3:Hide() end
+		row.closeBtn:Show() -- always visible
+		row.editBox:Hide()
+		row.addButton:Hide()
+		row.labelFS:Hide()
+		if row.abilityDD then
+			row.abilityDD:Hide()
+		end
 
-        -- cached layout helpers
-        local spacing     = row._spacing     or 4
-        local parentWidth = row._parentWidth or 260
-        local closeWidth  = row._closeWidth  or 20
+		-- cached layout helpers
+		local spacing     = row._spacing     or 4
+		local parentWidth = row._parentWidth or 260
+		local closeWidth  = row._closeWidth  or 20
 
-        if state == "STEP1" then
-            -- First step: three choices (Ability / Buff / Debuff)
-            row._branch = nil
+		if state == "STEP1" then
+			-- First step: four choices (Ability / Buff / Debuff / Talent)
+			row._branch = nil
 
-            -- Equal-width layout for: Ability | Buff | Debuff
-            local spacing     = row._spacing     or 4
-            local parentWidth = row._parentWidth or 260
-            local closeWidth  = row._closeWidth  or 20
+			-- Space available for four buttons (leave room for [X] and some padding)
+			local available = parentWidth - closeWidth - spacing*5
+			if available < 80 then
+				available = 80
+			end
+			local w = math.floor(available / 4)
 
-            -- Space available for the three buttons (leave room for [X] and some padding)
-            local available = parentWidth - closeWidth - spacing*4
-            if available < 60 then
-                available = 60
-            end
-            local w = math.floor(available / 3)
+			row.btn1:SetWidth(w)
+			row.btn2:SetWidth(w)
+			row.addButton:SetWidth(w)
+			if row.btn3 then
+				row.btn3:SetWidth(w)
+			end
 
-            row.btn1:SetWidth(w)
-            row.btn2:SetWidth(w)
-            row.addButton:SetWidth(w)
+			row.btn1:ClearAllPoints()
+			row.btn2:ClearAllPoints()
+			row.addButton:ClearAllPoints()
+			if row.btn3 then row.btn3:ClearAllPoints() end
 
-            row.btn1:ClearAllPoints()
-            row.btn2:ClearAllPoints()
-            row.addButton:ClearAllPoints()
+			row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
+			row.addButton:SetPoint("LEFT", row.btn2, "RIGHT", spacing, 0)
+			if row.btn3 then
+				row.btn3:SetPoint("LEFT", row.addButton, "RIGHT", spacing, 0)
+			end
 
-            row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
-            row.addButton:SetPoint("LEFT", row.btn2, "RIGHT", spacing, 0)
+			row.btn1:SetText("Ability")
+			row.btn2:SetText("Buff")
+			row.addButton:SetText("Debuff")
+			if row.btn3 then
+				row.btn3:SetText("Talent")
+			end
 
-            row.btn1:SetText("Ability")
-            row.btn2:SetText("Buff")
-            row.addButton:SetText("Debuff")
+			row.btn1:Show()
+			row.btn2:Show()
+			row.addButton:Show()
+			if row.btn3 then row.btn3:Show() end
 
-            row.btn1:Show()
-            row.btn2:Show()
-            row.addButton:Show()
+		elseif state == "STEP2" then
+			-- Second step: two wide buttons (Not on CD / On CD, Found / Missing, Known / Not known)
 
-        elseif state == "STEP2" then
-            -- Second step: depends on branch
-            row.btn1:ClearAllPoints()
-            row.btn2:ClearAllPoints()
-            row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
+			-- Space for two buttons + [X]
+			local available = parentWidth - closeWidth - spacing*3
+			if available < 120 then
+				available = 120
+			end
+			local w = math.floor(available / 2)
 
-            if row._branch == "ABILITY" then
-                -- Ability: cooldown mode
-                row.btn1:SetText("Not on CD")
-                row.btn2:SetText("On CD")
-            else
-                -- Aura (Buff/Debuff): Found / Missing
-                row.btn1:SetText("Found")
-                row.btn2:SetText("Missing")
-            end
+			row.btn1:SetWidth(w)
+			row.btn2:SetWidth(w)
 
-            row.btn1:Show()
-            row.btn2:Show()
+			row.btn1:ClearAllPoints()
+			row.btn2:ClearAllPoints()
+			row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
 
-        elseif state == "STEP3" then
-            -- Aura only: unit selection
-            row.btn1:ClearAllPoints()
-            row.btn2:ClearAllPoints()
-            row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
-            row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
+			if row._branch == "ABILITY" then
+				-- Ability: cooldown mode
+				row.btn1:SetText("Not on CD")
+				row.btn2:SetText("On CD")
 
-            row.btn1:SetText("On player")
-            row.btn2:SetText("On target")
-            row.btn1:Show()
-            row.btn2:Show()
+			elseif row._branch == "TALENT" then
+				-- Talent: Known / Not known
+				row.btn1:SetText("Known")
+				row.btn2:SetText("Not known")
 
-        elseif state == "INPUT" then
-            -- In INPUT mode, layout is:
-            --   [editbox or dropdown] ................................ [Add][X]
-            -- so the Add button sits closer to the X on the right side.
-            local addWidth  = row.addButton:GetWidth() or 40
-            local rightGap  = 2
-            local totalRight = closeWidth + spacing + addWidth + rightGap
+			else
+				-- Aura (Buff/Debuff): Found / Missing
+				row.btn1:SetText("Found")
+				row.btn2:SetText("Missing")
+			end
 
-            local editWidth = parentWidth - spacing - totalRight
-            if editWidth < 60 then editWidth = 60 end
+			row.btn1:Show()
+			row.btn2:Show()
 
-            row.editBox:ClearAllPoints()
-            row.addButton:ClearAllPoints()
-            if row.abilityDD then
-                row.abilityDD:ClearAllPoints()
-            end
+		elseif state == "STEP3" then
+			-- Aura only: unit selection (two wide buttons: On player / On target)
 
-            -- edit/input area starts at x=0
-            row.editBox:SetWidth(editWidth)
-            row.editBox:SetPoint("LEFT", row, "LEFT", 10, 0)
+			local available = parentWidth - closeWidth - spacing*3
+			if available < 120 then
+				available = 120
+			end
+			local w = math.floor(available / 2)
 
-            -- Add button sits just to the left of the close "X"
-            row.addButton:SetPoint("RIGHT", row.closeBtn, "LEFT", -rightGap, 0)
-            row.addButton:SetText("Add")
+			row.btn1:SetWidth(w)
+			row.btn2:SetWidth(w)
 
-            if row._branch == "ABILITY" then
-                -- Ability branch: dropdown (starting at x=0) + Add
-                if row.abilityDD then
-                    row.editBox:Hide()
-                    row.abilityDD:SetPoint("LEFT", row, "LEFT", -15, -4)
-                    if UIDropDownMenu_SetWidth then
-                        pcall(UIDropDownMenu_SetWidth, editWidth, row.abilityDD)
-                    end
-                    AuraCond_InitAbilityDropdown(row)
-                    row.abilityDD:Show()
-                end
-                row.addButton:Show()
-            else
-                -- Aura branch: manual spell-name input + Add
-                row.editBox:Show()
-                row.addButton:Show()
-            end
+			row.btn1:ClearAllPoints()
+			row.btn2:ClearAllPoints()
+			row.btn1:SetPoint("LEFT", row, "LEFT", 0, 0)
+			row.btn2:SetPoint("LEFT", row.btn1, "RIGHT", spacing, 0)
 
-        elseif state == "SAVED" then
-            row.labelFS:SetText(row._desc or "")
-            row.labelFS:Show()
-        end
-    end
+			row.btn1:SetText("On player")
+			row.btn2:SetText("On target")
+			row.btn1:Show()
+			row.btn2:Show()
+
+		elseif state == "INPUT" then
+			-- In INPUT mode, layout is:
+			--   [editbox or dropdown] ................................ [Add][X]
+			-- so the Add button sits closer to the X on the right side.
+			local addWidth  = row.addButton:GetWidth() or 40
+			local rightGap  = 2
+			local totalRight = closeWidth + spacing + addWidth + rightGap
+
+			local editWidth = parentWidth - spacing - totalRight
+			if editWidth < 60 then editWidth = 60 end
+
+			row.editBox:ClearAllPoints()
+			row.addButton:ClearAllPoints()
+			if row.abilityDD then
+				row.abilityDD:ClearAllPoints()
+			end
+
+			-- edit/input area starts at x=0
+			row.editBox:SetWidth(editWidth)
+			row.editBox:SetPoint("LEFT", row, "LEFT", 10, 0)
+
+			-- Add button sits just to the left of the close "X"
+			row.addButton:SetPoint("RIGHT", row.closeBtn, "LEFT", -rightGap, 0)
+			row.addButton:SetText("Add")
+
+			if row._branch == "ABILITY" then
+				-- Ability branch: dropdown (starting at x=0) + Add
+				if row.abilityDD then
+					row.editBox:Hide()
+					row.abilityDD:SetPoint("LEFT", row, "LEFT", -15, -4)
+					if UIDropDownMenu_SetWidth then
+						pcall(UIDropDownMenu_SetWidth, editWidth, row.abilityDD)
+					end
+					AuraCond_InitAbilityDropdown(row)
+					row.abilityDD:Show()
+				end
+				row.addButton:Show()
+			else
+				-- Aura/Talent branch: manual spell/talent name input + Add
+				row.editBox:Show()
+				row.addButton:Show()
+			end
+
+		elseif state == "SAVED" then
+			row.labelFS:SetText(row._desc or "")
+			row.labelFS:Show()
+		end
+	end
 
     local function AuraCond_OnCancelEditing(row)
         -- Reset the single editing row back to the first step
@@ -4107,15 +4164,19 @@ do
             return
         end
 
-        local buffType = row._choiceBuffType or "BUFF"
-        local mode     = row._choiceMode     or "found"
-        local unit
-        if row._branch == "ABILITY" then
-            unit = nil
-            buffType = "ABILITY"
-        else
-            unit = row._choiceUnit or "player"
-        end
+		local buffType = row._choiceBuffType or "BUFF"
+		local mode     = row._choiceMode     or "found"
+		local unit
+
+		if row._branch == "ABILITY" then
+			unit = nil
+			buffType = "ABILITY"
+		elseif row._branch == "TALENT" then
+			-- Talent rows have no unit field; keep buffType = "TALENT"
+			unit = nil
+		else
+			unit = row._choiceUnit or "player"
+		end
 
         local list = AuraCond_GetListForType(mgr.typeKey)
         if not list then return end
@@ -4144,8 +4205,12 @@ do
         if not list then return end
 
         local idx = row._entryIndex or 0
-        local n = AuraCond_Len(list)
+        local n   = AuraCond_Len(list)
         if idx < 1 or idx > n then return end
+
+        -- Remember if this entry carried parentheses; only then allow a logic reset (your "NOT affecting parentheses" rule).
+        local deletedEntry = list[idx]
+        local hadParens = deletedEntry and (deletedEntry.parenOpen or deletedEntry.parenClose)
 
         -- compact the array: shift down all elements after idx
         local i
@@ -4154,10 +4219,15 @@ do
         end
         list[n] = nil
 
+        -- If this deletion ruined the bracket structure, reset the icon's logic for this typeKey to pure AND + no parentheses and notify.
+        if hadParens and DoiteLogic and DoiteLogic.ValidateOrResetCurrentLogic then
+            DoiteLogic.ValidateOrResetCurrentLogic(mgr.typeKey)
+        end
+
         AuraCond_RebuildFromDB_Internal(mgr.typeKey)
         _ReflowCondAreaHeight()
     end
-
+	
     -- simple counter so each dropdown gets a real (unique) frame name
     local AuraCond_RowCounter = (AuraCond_RowCounter or 0)
 
@@ -4186,20 +4256,23 @@ do
         row._mainWidth   = mainWidth
 
         -- main 2 buttons
-        row.btn1 = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.btn2 = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.closeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.editBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
-        row.addButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        row.labelFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		row.btn1 = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		row.btn2 = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		row.btn3 = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		row.closeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		row.editBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+		row.addButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+		row.labelFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 
         local ddName = "DoiteAuraCond_AbilityDD_" .. tostring(mgr.typeKey or "X") .. "_" .. tostring(AuraCond_RowCounter)
         row.abilityDD = CreateFrame("Frame", ddName, row, "UIDropDownMenuTemplate")
 
-        row.btn1:SetWidth(mainWidth)
-        row.btn2:SetWidth(mainWidth)
-        row.btn1:SetHeight(18)
-        row.btn2:SetHeight(18)
+		row.btn1:SetWidth(mainWidth)
+		row.btn2:SetWidth(mainWidth)
+		row.btn3:SetWidth(mainWidth)
+		row.btn1:SetHeight(18)
+		row.btn2:SetHeight(18)
+		row.btn3:SetHeight(18)
 
         row.closeBtn:SetWidth(closeWidth)
         row.closeBtn:SetHeight(18)
@@ -4248,71 +4321,99 @@ do
             end
         end
 
-        YellowifyButton(row.btn1)
-        YellowifyButton(row.btn2)
-        YellowifyButton(row.addButton)
-        YellowifyButton(row.closeBtn)
+		YellowifyButton(row.btn1)
+		YellowifyButton(row.btn2)
+		YellowifyButton(row.btn3)
+		YellowifyButton(row.addButton)
+		YellowifyButton(row.closeBtn)
 
         -- progression buttons:
-        row.btn1:SetScript("OnClick", function()
-            if not currentKey then return end
-            local state = row._state
+		row.btn1:SetScript("OnClick", function()
+			if not currentKey then return end
+			local state = row._state
 
-            if state == "STEP1" then
-                -- Ability
-                row._branch         = "ABILITY"
-                row._choiceBuffType = "ABILITY"
-                row._choiceMode     = nil
-                row._choiceUnit     = nil
-                AuraCond_SetRowState(row, "STEP2")
+			if state == "STEP1" then
+				-- Ability
+				row._branch         = "ABILITY"
+				row._choiceBuffType = "ABILITY"
+				row._choiceMode     = nil
+				row._choiceUnit     = nil
+				AuraCond_SetRowState(row, "STEP2")
 
-            elseif state == "STEP2" then
-                if row._branch == "ABILITY" then
-                    -- Ability: Not on cooldown
-                    row._choiceMode = "notcd"
-                    AuraCond_SetRowState(row, "INPUT")
-                else
-                    -- Aura: Found
-                    row._choiceMode = "found"
-                    AuraCond_SetRowState(row, "STEP3")
-                end
+			elseif state == "STEP2" then
+				if row._branch == "ABILITY" then
+					-- Ability: Not on cooldown
+					row._choiceMode = "notcd"
+					AuraCond_SetRowState(row, "INPUT")
 
-            elseif state == "STEP3" then
-                -- Aura: On player
-                row._choiceUnit = "player"
-                AuraCond_SetRowState(row, "INPUT")
-            end
-        end)
+				elseif row._branch == "TALENT" then
+					-- Talent: Known
+					row._choiceMode = "Known"
+					AuraCond_SetRowState(row, "INPUT")
 
-        row.btn2:SetScript("OnClick", function()
-            if not currentKey then return end
-            local state = row._state
+				else
+					-- Aura: Found
+					row._choiceMode = "found"
+					AuraCond_SetRowState(row, "STEP3")
+				end
 
-            if state == "STEP1" then
-                -- Buff (Aura)
-                row._branch         = "AURA"
-                row._choiceBuffType = "BUFF"
-                row._choiceMode     = nil
-                row._choiceUnit     = nil
-                AuraCond_SetRowState(row, "STEP2")
+			elseif state == "STEP3" then
+				-- Aura: On player
+				row._choiceUnit = "player"
+				AuraCond_SetRowState(row, "INPUT")
+			end
+		end)
 
-            elseif state == "STEP2" then
-                if row._branch == "ABILITY" then
-                    -- Ability: On cooldown
-                    row._choiceMode = "oncd"
-                    AuraCond_SetRowState(row, "INPUT")
-                else
-                    -- Aura: Missing
-                    row._choiceMode = "missing"
-                    AuraCond_SetRowState(row, "STEP3")
-                end
+		row.btn2:SetScript("OnClick", function()
+			if not currentKey then return end
+			local state = row._state
 
-            elseif state == "STEP3" then
-                -- Aura: On target
-                row._choiceUnit = "target"
-                AuraCond_SetRowState(row, "INPUT")
-            end
-        end)
+			if state == "STEP1" then
+				-- Buff (Aura)
+				row._branch         = "AURA"
+				row._choiceBuffType = "BUFF"
+				row._choiceMode     = nil
+				row._choiceUnit     = nil
+				AuraCond_SetRowState(row, "STEP2")
+
+			elseif state == "STEP2" then
+				if row._branch == "ABILITY" then
+					-- Ability: On cooldown
+					row._choiceMode = "oncd"
+					AuraCond_SetRowState(row, "INPUT")
+
+				elseif row._branch == "TALENT" then
+					-- Talent: Not known
+					row._choiceMode = "Not Known"
+					AuraCond_SetRowState(row, "INPUT")
+
+				else
+					-- Aura: Missing
+					row._choiceMode = "missing"
+					AuraCond_SetRowState(row, "STEP3")
+				end
+
+			elseif state == "STEP3" then
+				-- Aura: On target
+				row._choiceUnit = "target"
+				AuraCond_SetRowState(row, "INPUT")
+			end
+		end)
+
+		
+		row.btn3:SetScript("OnClick", function()
+			if not currentKey then return end
+			local state = row._state
+
+			if state == "STEP1" then
+				-- Talent branch
+				row._branch         = "TALENT"
+				row._choiceBuffType = "TALENT"
+				row._choiceMode     = nil
+				row._choiceUnit     = nil
+				AuraCond_SetRowState(row, "STEP2")
+			end
+		end)
 
         row.addButton:SetText("Add")
         row.addButton:SetScript("OnClick", function()
@@ -4382,7 +4483,7 @@ do
 			label:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", 0, 0)
 			label:SetJustifyH("LEFT")
 			label:SetTextColor(1, 0.82, 0)
-			label:SetText("Add conditions for found or missing Auras:")
+			label:SetText("Add extra ability / aura / talent conditions:")
 			mgr.label = label
 		end
 

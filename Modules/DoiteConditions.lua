@@ -29,6 +29,9 @@ local UnitHealthMax = UnitHealthMax
 local UnitMana      = UnitMana
 local UnitManaMax   = UnitManaMax
 local GetComboPoints = GetComboPoints
+local GetNumTalentTabs = GetNumTalentTabs
+local GetNumTalents    = GetNumTalents
+local GetTalentInfo    = GetTalentInfo
 
 local str_find  = string.find
 local str_match = string.match
@@ -1511,6 +1514,37 @@ local function _AuraConditions_UnitHasAura(unit, auraName, wantDebuff)
     end
 end
 
+-- Talent helpers for auraConditions (Known / Not known)
+local function _TalentIsKnownByName(talentName)
+    if not talentName or talentName == "" then
+        return false
+    end
+    if not GetNumTalentTabs or not GetNumTalents or not GetTalentInfo then
+        return false
+    end
+
+    local numTabs = GetNumTalentTabs()
+    if not numTabs or numTabs <= 0 then
+        return false
+    end
+
+    local tab = 1
+    while tab <= numTabs do
+        local numTalents = GetNumTalents(tab) or 0
+        local idx = 1
+        while idx <= numTalents do
+            local name, _, _, _, rank = GetTalentInfo(tab, idx)
+            if name == talentName then
+                return (rank and rank > 0)
+            end
+            idx = idx + 1
+        end
+        tab = tab + 1
+    end
+
+    return false
+end
+
 local function _AuraConditions_CheckEntry(entry)
     if not entry or not entry.buffType or not entry.mode then
         return true
@@ -1549,6 +1583,26 @@ local function _AuraConditions_CheckEntry(entry)
             return true
         end
     end
+
+    -- TALENT CONDITION BRANCH (Known / Not known)
+    if entry.buffType == "TALENT" then
+        local modeRaw = entry.mode or ""
+        local modeKey = string.lower(modeRaw)
+        -- Normalize: "Not Known", "not known", "notknown" -> "notknown"
+        modeKey = str_gsub(modeKey, "%s+", "")
+
+        local isKnown = _TalentIsKnownByName(name)
+
+        if modeKey == "known" then
+            return isKnown
+        elseif modeKey == "notknown" then
+            return (not isKnown)
+        else
+            -- Unknown mode => do not fail the whole list
+            return true
+        end
+    end
+    -- === END TALENT CONDITION BRANCH (Known / Not known) ===
 
     -- BUFF / DEBUFF branch: check unit auras
     local unit = entry.unit or "player"

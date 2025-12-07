@@ -76,6 +76,106 @@ local function _HasAnyLogicHints(list)
     return false
 end
 
+-- Parenthesis-specific helpers
+local function _HasAnyParenHints(list)
+    local n = _len(list)
+    if n == 0 then return false end
+    local i = 1
+    while i <= n do
+        local e = list[i]
+        if e and (e.parenOpen or e.parenClose) then
+            return true
+        end
+        i = i + 1
+    end
+    return false
+end
+
+local function _IsParenStructureValid(list)
+    local n         = _len(list)
+    local openCount = 0
+    local i         = 1
+    local valid     = true
+
+    while i <= n do
+        local e = list[i]
+
+        if e and e.parenOpen then
+            openCount = openCount + 1
+        end
+
+        if e and e.parenClose then
+            if openCount <= 0 then
+                valid = false
+                break
+            else
+                openCount = openCount - 1
+            end
+        end
+
+        i = i + 1
+    end
+
+    if openCount ~= 0 then
+        valid = false
+    end
+
+    return valid
+end
+
+local function _ResetLogicToStrictAnd(list)
+    -- Clear all AND/OR and paren hints; evaluation will fall back to pure AND
+    local n = _len(list)
+    local i = 1
+    while i <= n do
+        local e = list[i]
+        if e then
+            e.logicOp   = nil
+            e.parenOpen = nil
+            e.parenClose = nil
+        end
+        i = i + 1
+    end
+end
+
+local function _NotifyLogicResetForCurrentSpell()
+    if not DEFAULT_CHAT_FRAME or not DEFAULT_CHAT_FRAME.AddMessage then
+        return
+    end
+    if not DoiteAurasDB or not DoiteAurasDB.spells or not DoiteEdit_CurrentKey then
+        return
+    end
+
+    local d = DoiteAurasDB.spells[DoiteEdit_CurrentKey]
+    if not d then
+        return
+    end
+
+    local displayName = d.displayName or DoiteEdit_CurrentKey
+
+    -- DoiteAuras blue: #6FA8DC -> FF6FA8DC
+    local prefix = "|cFF6FA8DCDoiteAuras:|r "
+    local body   = "|cFFFFFFFFBy removing a condition with dependant AND/OR logic, all logic has been reset for|r"
+    local name   = ""
+    if displayName then
+        name = " |cFFFFFF00" .. displayName .. "|r."
+    end
+
+    DEFAULT_CHAT_FRAME:AddMessage(prefix .. body .. name)
+end
+
+-- Public helper: used by DoiteEdit after deleting a condition row.
+function DoiteLogic.ValidateOrResetCurrentLogic(typeKey)
+    if not typeKey then return end
+    local list = _DA_Logic_GetAuraListForType(typeKey)
+    if not list then return end
+
+    if _HasAnyParenHints(list) and not _IsParenStructureValid(list) then
+        _ResetLogicToStrictAnd(list)
+        _NotifyLogicResetForCurrentSpell()
+    end
+end
+
 ---------------------------------------------------------------
 -- Shunting-yard: infix -> RPN
 ---------------------------------------------------------------
@@ -211,7 +311,6 @@ function DoiteLogic.EvaluateGeneric(list, evalFunc)
 
     evalFunc = evalFunc or function(e) return e ~= nil end
 
-    -- Fast path: no logic hints → simple AND chain (backwards compatible)
     if not _HasAnyLogicHints(list) then
         local i = 1
         while i <= n do
@@ -223,7 +322,21 @@ function DoiteLogic.EvaluateGeneric(list, evalFunc)
         return true
     end
 
-    -- Build infix token list: ( value ) OP ( value ) OP ...
+    if _HasAnyParenHints(list) and not _IsParenStructureValid(list) then
+        _ResetLogicToStrictAnd(list)
+        _NotifyLogicResetForCurrentSpell()
+
+        -- After reset there are no logic hints anymore, so fall back to the simple AND behaviour.
+        local i = 1
+        while i <= n do
+            if not evalFunc(list[i]) then
+                return false
+            end
+            i = i + 1
+        end
+        return true
+    end
+
     local tokens = {}
 
     local i = 1
@@ -248,8 +361,6 @@ function DoiteLogic.EvaluateGeneric(list, evalFunc)
 
         i = i + 1
     end
-
-    -- Robust: if expression is malformed, fall back to strict AND
     local ok, rpn = pcall(_ToRpn, tokens)
     if not ok or not rpn then
         local j = 1
@@ -302,6 +413,8 @@ local function _BuildLabelForEntry(entry, index)
         kindText = "Ability"
     elseif kind == "DEBUFF" then
         kindText = "Debuff"
+    elseif kind == "TALENT" then
+        kindText = "Talent"
     else
         kindText = "Buff"
     end
@@ -316,14 +429,29 @@ local function _BuildLabelForEntry(entry, index)
     elseif mode == "found" or mode == "" or mode == nil then
         modeText = "Found"
     else
-        modeText = mode
+        -- Normalise talent modes etc.
+        local m = tostring(mode or "")
+        local lower = string.lower(m)
+        if lower == "known" then
+            modeText = "Known"
+        elseif lower == "notknown" or lower == "not known" then
+            modeText = "Not known"
+        else
+            modeText = m
+        end
     end
 
     local unitText = ""
-    if unit == "target" then
-        unitText = "On target"
-    elseif unit == "player" or unit == "" or unit == nil then
-        unitText = "On player"
+    local selfKind = (kind == "ABILITY" or kind == "TALENT")
+
+    if selfKind then
+        unitText = "Player"
+    else
+        if unit == "target" then
+            unitText = "On target"
+        elseif unit == "player" or unit == "" or unit == nil then
+            unitText = "On player"
+        end
     end
 
     local parts = {}
