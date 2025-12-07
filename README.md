@@ -1,5 +1,5 @@
 # DoiteAuras
-Looking for WeakAuras? DoiteAuras is an **ability**, **buff**, **debuff**, **item** and **bar** tracker for Vanilla WoW (Light-WeakAuras inspired). Build your UI based on conditions, focus on what's important.
+Looking for WeakAuras in Vanilla WoW? DoiteAuras is a lightweight, condition-based tracker for **abilities**, **buffs**, **debuffs**, **items** and **bars** in 1.12.
 
 > [!IMPORTANT]
 >
@@ -20,7 +20,7 @@ _Please respect the license note._
 ## Installation
 1.  Navigate to your World of Warcraft installation folder.
 2.  Go into the `Interface` -> `AddOns` directory.
-3.  Place the `Tactica` folder directly into the `AddOns` folder.
+3.  Place the `DoiteAuras` folder directly into the `AddOns` folder.
 4.  Restart World of Warcraft completely.
 
 Alternatively just take add this link and add to the launcher (addon tab -> Add new addon) or similarly with GithubAddonsManager: https://github.com/Player-Doite/DoiteAuras
