@@ -136,7 +136,7 @@ local function TitleCase(str)
 
     local result, first = "", true
 
-    for word in string.gmatch(str, "%S+") do
+    for word in string.gfind(str, "%S+") do
         -- If the word starts with "(", force-capitalize the first letter after "(".
         local startsParen = (string.sub(word, 1, 1) == "(")
         local leading     = startsParen and "(" or ""

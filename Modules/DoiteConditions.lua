@@ -2209,7 +2209,7 @@ end
 local function _ParseMultiUnitTypes(val)
     local wanted, seen = {}, {}
     local d
-    for d in string.gmatch(val, "(%d)") do
+    for d in string.gfind(val, "(%d)") do
         local idx = tonumber(d)
         local name = idx and UNIT_TYPE_INDEX_MAP[idx] or nil
         if name and not seen[name] then

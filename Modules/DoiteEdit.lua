@@ -819,7 +819,7 @@ local function AuraCond_TitleCase(str)
 
     local result, first = "", true
     local word
-    for word in string.gmatch(str, "%S+") do
+    for word in string.gfind(str, "%S+") do
         local startsParen = (string.sub(word, 1, 1) == "(")
         local leading     = startsParen and "(" or ""
         local core        = startsParen and string.sub(word, 2) or word
