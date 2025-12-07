@@ -1,6 +1,8 @@
 # DoiteAuras
 Looking for WeakAuras in Vanilla WoW? DoiteAuras is a lightweight, condition-based tracker for **abilities**, **buffs**, **debuffs**, **items** and **bars** in 1.12.
 
+## OBS STILL UNDER BETA TESTING - JUST SLOWLY PREPARING FOR RELEASE - IF YOU ENCOUNTER ANY BUGS LET ME KNOW.
+
 > [!IMPORTANT]
 >
 > **Vanilla 1.12 API is very limited, hence not many modern client addons work. Therefore, this addon requires you to have the following mods to extend the API:**
