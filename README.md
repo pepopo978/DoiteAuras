@@ -12,7 +12,7 @@ Looking for WeakAuras in Vanilla WoW? DoiteAuras is a lightweight, condition-bas
 
 _Please respect the license note._
 
-## Tutorial
+## Tutorial & How-to instructions
 [![Watch the video](https://img.youtube.com/vi/T-D1KVIuvjA/maxresdefault.jpg)](https://youtu.be/T-D1KVIuvjA)
 
 ## Quick start
@@ -25,12 +25,13 @@ _Please respect the license note._
 3.  Place the `DoiteAuras` folder directly into the `AddOns` folder.
 4.  Restart World of Warcraft completely.
 
-Alternatively just take add this link and add to the launcher (addon tab -> Add new addon) or similarly with GithubAddonsManager: https://github.com/Player-Doite/DoiteAuras
+Alternatively, just take this link and add to the launcher (addon tab -> "+ Add new addon") or similarly with GithubAddonsManager: https://github.com/Player-Doite/DoiteAuras
 
 ## Contact
-Addon, logic and default tactics all made by Doite. Contact me in-game, github via "Issues" or via discord if something is wrong.
+Addon made by Doite, while all extensions of the 1.12/LUA 5.0 API by mentioned links at the top of this description. Contact me in-game, github via "Issues", or via Discord if something is wrong with __the addon__.
+You can check out my other addon here: [Tactica](https://github.com/Player-Doite/tactica) (_a raid helper for raid-leaders, including auto-building raids, auto-invite, posting tactics, assigning roles in raid roster and more._)
 
-## Special thanks to:
+## Thanks to all fellow addon developers - while a special thank you to:
 [NAME](GITHUB LINK) - Description
 
 [NAME](GITHUB LINK) - Description
