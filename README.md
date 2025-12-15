@@ -23,7 +23,7 @@ _Please respect the license note._
 - More to come.. (Bars, features, options)
 
 ## Tutorial & How-to instructions
-[![Watch the video](https://img.youtube.com/vi/T-D1KVIuvjA/maxresdefault.jpg)](https://youtu.be/T-D1KVIuvjA)
+[![Watch the video](https://img.youtube.com/vi/T-D1KVIuvjA/maxresdefault.jpg)](https://youtu.be/L049puyYDV8)
 _Have not added video yet_
 
 ## Quick start
