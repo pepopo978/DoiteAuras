@@ -44,16 +44,32 @@ local _DoiteEdit_Throttle = CreateFrame("Frame")
 -- Global flag toggled while the main Edit or Main frames are being dragged
 _G["DoiteUI_Dragging"] = _G["DoiteUI_Dragging"] or false
 
+-- Internal immediate heavy helpers (never called directly from UI; only from the throttle)
+local function _DoiteEdit_ImmediateRefresh()
+    if DoiteAuras_RefreshList then DoiteAuras_RefreshList() end
+    if DoiteAuras_RefreshIcons then DoiteAuras_RefreshIcons() end
+end
+
+local function _DoiteEdit_ImmediateEvaluate()
+    if DoiteConditions_RequestEvaluate then
+        DoiteConditions_RequestEvaluate()
+    elseif DoiteConditions and DoiteConditions.EvaluateAll then
+        DoiteConditions:EvaluateAll()
+    end
+end
+
 local function DoiteEdit_QueueHeavy()
     _DoiteEdit_PendingHeavy = true
 end
 
 local function DoiteEdit_FlushHeavy()
+    if not _DoiteEdit_PendingHeavy then return end
     _DoiteEdit_PendingHeavy = false
     _DoiteEdit_Accum = 0
-    -- one combined heavy pass
-    SafeRefresh()
-    SafeEvaluate()
+
+    -- One combined heavy pass, batched behind the throttle
+    _DoiteEdit_ImmediateRefresh()
+    _DoiteEdit_ImmediateEvaluate()
 end
 
 _DoiteEdit_Throttle:SetScript("OnUpdate", function()
@@ -208,16 +224,11 @@ local function BuildGroupLeaders()
 end
 
 SafeEvaluate = function()
-  if DoiteConditions_RequestEvaluate then
-    DoiteConditions_RequestEvaluate()
-  elseif DoiteConditions and DoiteConditions.EvaluateAll then
-    DoiteConditions:EvaluateAll()
-  end
+    DoiteEdit_QueueHeavy()
 end
 
 SafeRefresh = function()
-  if DoiteAuras_RefreshList then DoiteAuras_RefreshList() end
-  if DoiteAuras_RefreshIcons then DoiteAuras_RefreshIcons() end
+    DoiteEdit_QueueHeavy()
 end
 
 -- === Dynamic bounds for Position & Size sliders (based on UIParent) ===
@@ -864,6 +875,8 @@ end
 ----------------------------------------------------------------
 local function CreateConditionsUI()
     if not condFrame then return end
+    if condFrame._conditionsUIBuilt then return end
+    condFrame._conditionsUIBuilt = true
 
     -- helpers (parent to the scrollable content area)
 	local function _Parent()
@@ -2209,39 +2222,20 @@ end)
             end
         end
 
-        if ms then
-            -- Mark as Missing: visually clear + grey out stacks & icon text
-            _setCheckState(condFrame.cond_item_stacks_cb, false, true)
-            _setCheckState(condFrame.cond_item_text_stack, false, true)
+		-- keep DB in sync with programmatic UI changes
+		if currentKey then
+			local d = EnsureDBEntry(currentKey)
+			d.conditions = d.conditions or {}
+			d.conditions.item = d.conditions.item or {}
 
-            if condFrame.cond_item_stacks_comp then
-                condFrame.cond_item_stacks_comp:Hide()
-            end
-            if condFrame.cond_item_stacks_val then
-                condFrame.cond_item_stacks_val:Hide()
-            end
-            if condFrame.cond_item_stacks_val_enter then
-                condFrame.cond_item_stacks_val_enter:Hide()
-            end
+			local stacksOn = (condFrame.cond_item_stacks_cb and condFrame.cond_item_stacks_cb.GetChecked
+							  and condFrame.cond_item_stacks_cb:GetChecked()) and true or false
+			local textOn   = (condFrame.cond_item_text_stack and condFrame.cond_item_text_stack.GetChecked
+							  and condFrame.cond_item_text_stack:GetChecked()) and true or false
 
-        else
-            _setCheckState(condFrame.cond_item_stacks_cb, true, false)
-            _setCheckState(condFrame.cond_item_text_stack, true, false)
-
-            if condFrame.cond_item_stacks_cb
-               and condFrame.cond_item_stacks_cb.GetChecked
-               and condFrame.cond_item_stacks_cb:GetChecked() then
-                if condFrame.cond_item_stacks_comp then
-                    condFrame.cond_item_stacks_comp:Show()
-                end
-                if condFrame.cond_item_stacks_val then
-                    condFrame.cond_item_stacks_val:Show()
-                end
-                if condFrame.cond_item_stacks_val_enter then
-                    condFrame.cond_item_stacks_val_enter:Show()
-                end
-            end
-        end
+			d.conditions.item.stacksEnabled      = stacksOn or false
+			d.conditions.item.textStackCounter   = textOn   or false
+		end
     end
 
     condFrame.cond_item_where_equipped:SetScript("OnClick", function()
@@ -2578,18 +2572,18 @@ end)
         local rem   = condFrame.cond_aura_remaining_cb
         local textR = condFrame.cond_aura_text_time
 
-        if ownerActive then
-            -- Owner filter active: allow and auto-check Remaining + Text: Remaining time.
-            _SetAuraCheckEnabled(rem,   true, false)
-            _SetAuraCheckEnabled(textR, true, false)
+		-- keep DB in sync with programmatic UI changes (SetChecked doesn't fire OnClick)
+		if currentKey then
+			local d = EnsureDBEntry(currentKey)
+			d.conditions = d.conditions or {}
+			d.conditions.aura = d.conditions.aura or {}
 
-            if rem   and rem.GetChecked   and not rem:GetChecked()   then rem:SetChecked(true)   end
-            if textR and textR.GetChecked and not textR:GetChecked() then textR:SetChecked(true) end
-        else
-            -- No owner flag: hard disable + uncheck both.
-            _SetAuraCheckEnabled(rem,   false, true)
-            _SetAuraCheckEnabled(textR, false, true)
-        end
+			local remOn   = (rem   and rem.GetChecked   and rem:GetChecked())   and true or false
+			local textOn  = (textR and textR.GetChecked and textR:GetChecked()) and true or false
+
+			d.conditions.aura.remainingEnabled    = remOn  or false
+			d.conditions.aura.textTimeRemaining  = textOn or false
+		end
     end
 
     local function AuraOwner_EnforceExclusivity(changed)
@@ -4141,7 +4135,7 @@ do
 		row.btn1:Hide()
 		row.btn2:Hide()
 		if row.btn3 then row.btn3:Hide() end
-		row.closeBtn:Show() -- always visible
+		row.closeBtn:Show()
 		row.editBox:Hide()
 		row.addButton:Hide()
 		row.labelFS:Hide()
@@ -4469,7 +4463,6 @@ do
 
         -- rebuild so a fresh saved row and a new clean editing row
         AuraCond_RebuildFromDB_Internal(mgr.typeKey)
-        _ReflowCondAreaHeight()
     end
 
     local function AuraCond_OnDeleteSaved(row)
@@ -4501,7 +4494,6 @@ do
         end
 
         AuraCond_RebuildFromDB_Internal(mgr.typeKey)
-        _ReflowCondAreaHeight()
     end
 	
     -- simple counter so each dropdown gets a real (unique) frame name
@@ -4795,7 +4787,7 @@ do
 			btn:SetScript("OnClick", function()
 				local DL = _G["DoiteLogic"]
 				if DL and DL.OpenAuraLogicEditor then
-					DL.OpenAuraLogicEditor("aura")   -- or "ability"/"item"
+					DL.OpenAuraLogicEditor(typeKey)   -- or "ability"/"item"
 				end
 			end)
 
@@ -5186,27 +5178,6 @@ local function UpdateConditionsUI(data)
         local function _disableCheck(cb)
             cb:Disable()
             if cb.text and cb.text.SetTextColor then cb.text:SetTextColor(0.6, 0.6, 0.6) end
-        end
-
-        if mode == "oncd" then
-            condFrame.cond_ability_text_time:Show()
-            _enableCheck(condFrame.cond_ability_text_time)
-            condFrame.cond_ability_text_time:SetChecked((c.ability and c.ability.textTimeRemaining) or false)
-
-        elseif mode == "usable" or mode == "notcd" then
-            condFrame.cond_ability_text_time:Show()
-            if slidEnabled then
-                _enableCheck(condFrame.cond_ability_text_time)
-                condFrame.cond_ability_text_time:SetChecked((c.ability and c.ability.textTimeRemaining) or false)
-            else
-                if c.ability and c.ability.textTimeRemaining then
-                    c.ability.textTimeRemaining = false
-                end
-                condFrame.cond_ability_text_time:SetChecked(false)
-                _disableCheck(condFrame.cond_ability_text_time)
-            end
-        else
-            condFrame.cond_ability_text_time:Hide()
         end
 
 		-- Time remaining behaves as before (gated by slider when mode is usable/notcd; shown on 'oncd')
@@ -6751,7 +6722,7 @@ function DoiteConditions_Show(key)
 					end
 				end)
 
-
+		_G["DoiteEdit_Frame"] = condFrame
 
 		-- === Suspend heavy work while dragging the main DoiteAuras frame; flush on release ===
 		if DoiteAurasFrame then

@@ -418,11 +418,20 @@ end
 ---------------------------------------------------------------
 local function _NormSpellName(name)
     if not name or name == "" then return nil end
+
+    -- trim
+    name = string.gsub(name, "^%s+", "")
+    name = string.gsub(name, "%s+$", "")
+
     name = string.lower(name)
 
     -- strip " (Rank X)" and " Rank X"
     name = string.gsub(name, "%s*%(rank%s*%d+%)", "")
     name = string.gsub(name, "%s*rank%s*%d+", "")
+
+    -- trim again (after gsubs)
+    name = string.gsub(name, "^%s+", "")
+    name = string.gsub(name, "%s+$", "")
 
     return name
 end
@@ -444,10 +453,11 @@ local function _AddTrackedFromEntry(key, data)
     end
 
     -- Only track explicit "only mine" auras, and only if they target something
-    local onlyMine  = (c.onlyMine == true)
-    local hasTarget = (c.targetSelf or c.targetHelp or c.targetHarm)
+    local onlyMine   = (c.onlyMine == true)
+    local onlyOthers = (c.onlyOthers == true)
+    local hasTarget  = (c.targetSelf or c.targetHelp or c.targetHarm)
 
-    if not hasTarget or not onlyMine then
+    if not hasTarget then
         return
     end
 
@@ -482,12 +492,16 @@ local function _AddTrackedFromEntry(key, data)
             trackSelf  = false,
             trackHelp  = false,
             trackHarm  = false,
-            onlyMine   = onlyMine,  -- flag to reuse in DoiteConditions
+            onlyMine    = onlyMine,
+            onlyOthers  = onlyOthers,
         }
     else
-        -- Preserve existing onlyMine if one of the entries had it
+        -- Preserve ownership flags if any entry requested them
         if entry.onlyMine ~= true and onlyMine then
             entry.onlyMine = true
+        end
+        if entry.onlyOthers ~= true and onlyOthers then
+            entry.onlyOthers = true
         end
     end
 
@@ -855,22 +869,121 @@ end
 ---------------------------------------------------------------
 -- Aura presence queries (using SuperWoW's auraId table)
 ---------------------------------------------------------------
+local function _GetUnitAuraTable(unit, isDebuff)
+    if not GetUnitField then return nil end
+
+    -- Primary field used in this addon so far
+    local t = GetUnitField(unit, "aura")
+    if type(t) == "table" then return t end
+
+    -- Fallbacks (harmless if unsupported)
+    if isDebuff then
+        t = GetUnitField(unit, "debuff")
+        if type(t) == "table" then return t end
+    else
+        t = GetUnitField(unit, "buff")
+        if type(t) == "table" then return t end
+    end
+
+    return nil
+end
+
+-- Discover and cache spellIds for an entry by scanning the unit’s aura spellIds,
+-- resolving spell name from spellId, and matching normalized name.
+local function _CacheMatchingAuraIdsOnUnit(entry, unit)
+    if not entry or not entry.normName or not unit then
+        return nil
+    end
+
+    local auras = _GetUnitAuraTable(unit, entry.kind == "Debuff")
+    if type(auras) ~= "table" then
+        return nil
+    end
+
+    local foundSid = nil
+
+    local function considerSpellId(raw)
+        local sid = tonumber(raw) or 0
+        if sid <= 0 then return end
+
+        local n = nil
+        if GetSpellNameAndRankForId then
+            local ok, nn = pcall(GetSpellNameAndRankForId, sid)
+            if ok and nn and nn ~= "" then
+                n = nn
+            end
+        end
+        if (not n or n == "") and SpellInfo then
+            local nn = SpellInfo(sid)
+            if type(nn) == "string" and nn ~= "" then
+                n = nn
+            end
+        end
+
+        local norm = _NormSpellName(n)
+        if norm and norm == entry.normName then
+            entry.spellIds = entry.spellIds or {}
+            entry.spellIds[sid] = true
+            TrackedBySpellId[sid] = entry
+            if not foundSid then
+                foundSid = sid
+            end
+        end
+    end
+
+    -- Array-style
+    local n = table.getn(auras)
+    if n and n > 0 then
+        local i
+        for i = 1, n do
+            considerSpellId(auras[i])
+        end
+    end
+
+    -- Hash/other-style
+    local k, v
+    for k, v in pairs(auras) do
+        -- if table is { [spellId]=true } or { [1]=spellId, ... } handle both
+        considerSpellId(k)
+        considerSpellId(v)
+    end
+
+    return foundSid
+end
+
 -- Based on probe D: GetUnitField("target","aura") returns a table of spellIds.
 local function _AuraHasSpellId(unit, spellId, isDebuff)
-    if not unit or not spellId or spellId <= 0 then
+    spellId = tonumber(spellId) or 0
+    if not unit or spellId <= 0 then
         return false
     end
 
-    if not GetUnitField then
+    local auras = _GetUnitAuraTable(unit, isDebuff)
+    if type(auras) ~= "table" then
         return false
     end
 
-    local auras = GetUnitField(unit, "aura")
-    if type(auras) == "table" then
-        for i = 1, table.getn(auras) do
+    -- Hash case: auras[spellId] == true
+    if auras[spellId] then
+        return true
+    end
+
+    -- Array case
+    local n = table.getn(auras)
+    if n and n > 0 then
+        local i
+        for i = 1, n do
             if auras[i] == spellId then
                 return true
             end
+        end
+    end
+
+    -- Fallback pairs scan
+    local k, v
+    for k, v in pairs(auras) do
+        if k == spellId or v == spellId then
+            return true
         end
     end
 
@@ -1724,20 +1837,27 @@ function DoiteTrack:HasAnyAuraByName(spellName, unit)
     end
 
     local entry = _GetEntryForName(spellName)
-    if not entry or not entry.spellIds then
+    if not entry then
         return false, nil
     end
+    entry.spellIds = entry.spellIds or {}
 
-    -- Cheap "does the unit even exist" guard
     if not UnitExists or not UnitExists(unit) then
         return false, nil
     end
 
-    -- Use SuperWoW's GetUnitField("unit","aura") via _AuraHasSpellId
+    -- 1) Fast path: known spellIds
+    local sid
     for sid in pairs(entry.spellIds) do
         if _AuraHasSpellId(unit, sid, entry.kind == "Debuff") then
             return true, sid
         end
+    end
+
+    -- 2) Slow path: discover spellId by scanning unit aura ids -> spell name -> normalize
+    local discovered = _CacheMatchingAuraIdsOnUnit(entry, unit)
+    if discovered and discovered > 0 then
+        return true, discovered
     end
 
     return false, nil
@@ -1750,7 +1870,7 @@ end
 --   spellId or nil (best "mine" spell if any),
 --   isMine:boolean,      -- true if at least one *mine* aura exists
 --   isOther:boolean,     -- true if at least one *non-mine* aura exists
---   ownerKnown:boolean   -- true if we know at least something about ownership
+--   ownerKnown:boolean   -- true if at least something about ownership
 function DoiteTrack:GetAuraOwnershipByName(spellName, unit)
     if not spellName or not unit then
         return nil, false, nil, false, false, false
@@ -1765,6 +1885,10 @@ function DoiteTrack:GetAuraOwnershipByName(spellName, unit)
     if not UnitExists or not UnitExists(unit) then
         return nil, false, nil, false, false, false
     end
+
+    -- Ensure spellIds for whatever rank is actually on the unit right now
+    entry.spellIds = entry.spellIds or {}
+    _CacheMatchingAuraIdsOnUnit(entry, unit)
 
     local bestRem, bestSpellId = nil, nil
     local recording            = false
@@ -1816,7 +1940,7 @@ function DoiteTrack:GetBaselineDuration(spellId, cp)
     return _GetBaselineDuration(spellId, cp or 0)
 end
 
--- Convenience boolean: do we know any duration (DBC or learned) for this spellId/cp?
+-- Convenience boolean: know any duration (DBC or learned) for this spellId/cp?
 function DoiteTrack:HasKnownDuration(spellId, cp)
     if not spellId then return false end
     return _GetBaselineDuration(spellId, cp or 0) ~= nil
@@ -1829,8 +1953,8 @@ function DoiteTrack:WillRecord(spellId, cp)
 end
 
 -- Is the tracked aura on this unit ours (player-cast)? "Mine" == either:
---   * we have an active recording session for this spell/unit, OR
---   * we have a positive remaining time from our recorded/DBC duration.
+--   * have an active recording session for this spell/unit, OR
+--   * have a positive remaining time from our recorded/DBC duration.
 function DoiteTrack:IsAuraMine(spellId, unit)
     if not spellId or not unit then
         return false
@@ -1858,7 +1982,26 @@ function DoiteTrack:IsAuraMine(spellId, unit)
         end
     end
 
-    -- Fallback: use our runtime remaining-time bucket
+    -- Fallback: only trust our bucket if this spellId is actually present right now.
+    local entry = TrackedBySpellId[spellId]
+    local present = false
+
+    if entry then
+        present = _AuraHasSpellId(unit, spellId, entry.kind == "Debuff")
+    else
+        -- If not know buff/debuff kind, try both.
+        present = _AuraHasSpellId(unit, spellId, true) or _AuraHasSpellId(unit, spellId, false)
+    end
+
+    if not present then
+        -- Stale bucket entry; drop it so it doesn't claim ownership.
+        local guid = _GetUnitGuidSafe(unit)
+        if guid and AuraStateByGuid[guid] then
+            AuraStateByGuid[guid][spellId] = nil
+        end
+        return false
+    end
+
     local rem = self:GetAuraRemainingSeconds(spellId, unit)
     return (rem ~= nil and rem > 0)
 end
@@ -1866,5 +2009,5 @@ end
 --------------------
 -- Ingame selftest
 --------------------
--- /run local n="Rip" local d=DoiteTrack local r,rec,sid=d:GetAuraRemainingOrRecordingByName(n,"target") local m=d:IsAuraMineByName(n,"target") print("rem",r,"rec",rec,"sid",sid,"mine",m)
+-- /run d=DoiteTrack;n="Rend";u="target";rem,rec,sid,hm,ho,ok=d:GetAuraOwnershipByName(n,u);print("has",ok,"sid",sid,"mine",hm,"other",ho,"rem",rem,"rec",rec)
 -- /run local id=11574 local d=DoiteTrack local r=d:GetAuraRemainingSeconds(id,"target") local c=d:IsAuraRecording(id,"target") local m=d:IsAuraMine(id,"target") local b=d:GetBaselineDuration(id,0) print("r",r,"c",c,"m",m,"b",b)
