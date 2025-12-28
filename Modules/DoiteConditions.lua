@@ -3625,6 +3625,11 @@ local function _IconHasTimeLogic_Item(data)
         return false
     end
     local c = data.conditions.item
+
+    if c.mode == "oncd" or c.mode == "notcd" then
+        return true
+    end
+
     if c.textTimeRemaining == true then
         return true
     end
@@ -5803,8 +5808,6 @@ function DoiteConditions:EvaluateAbilities(doLogic, doTime)
     local key, data
 
     -- Fast path: time-heartbeat only (avoid scanning every icon each 0.5s)
-    -- IMPORTANT: This still runs full Check*Conditions() for time-sensitive icons,
-    -- so any remaining-threshold / slider-dependent show logic stays identical.
     if doLogic == false and doTime == true then
         -- 1) Live keys that actually have time logic
         if live then
@@ -6098,11 +6101,21 @@ local _tick = CreateFrame("Frame")
 _acc        = 0
 _textAccum  = 0
 _distAccum  = 0
+_timeEvalAccum = 0
 
 -- Lift the body into a real function
-local function DoiteConditions_OnUpdate(dt)
+function DoiteConditions_OnUpdate(dt)
     _acc       = _acc + dt
     _textAccum = _textAccum + dt
+
+    -- 0.5s heartbeat for ability/item time-based logic (cooldown end needs reevaluation).
+    _timeEvalAccum = _timeEvalAccum + dt
+    if _timeEvalAccum >= 0.5 then
+        _timeEvalAccum = 0
+        if _hasAnyAbilityTimeLogic then
+            dirty_ability_time = true
+        end
+    end
 
     -- Keep warrior Overpower/Revenge procs in sync even if no other events fire
     DoiteConditions_WarriorProcTick()
@@ -6202,6 +6215,7 @@ eventFrame:RegisterEvent("UNIT_HEALTH")
 eventFrame:RegisterEvent("PLAYER_COMBO_POINTS")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 
 eventFrame:SetScript("OnEvent", function()
@@ -6314,6 +6328,9 @@ elseif event == "UNIT_AURA" then
 		end
 		dirty_ability = true
 		dirty_aura    = true
+
+	elseif event == "BAG_UPDATE_COOLDOWN" then
+		dirty_ability = true
 
 	elseif event == "BAG_UPDATE" then
 		if _InvalidateItemScanCache then

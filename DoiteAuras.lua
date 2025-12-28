@@ -1752,6 +1752,26 @@ local function RefreshIcons()
         DoiteAuras._spellSlotCache = slotCache
     end
 
+    -- Build leader-size map so grouped followers can inherit the leader's size
+    local leaderSizeByGroup = DoiteAuras._leaderSizeByGroup
+    if not leaderSizeByGroup then
+        leaderSizeByGroup = {}
+        DoiteAuras._leaderSizeByGroup = leaderSizeByGroup
+    else
+        local k
+        for k in pairs(leaderSizeByGroup) do
+            leaderSizeByGroup[k] = nil
+        end
+    end
+
+    for i = 1, total do
+        local key  = keyList[i]
+        local data = DoiteAurasDB.spells[key]
+        if data and data.group and data.group ~= "" and data.group ~= "no" and data.isLeader == true then
+            leaderSizeByGroup[data.group] = (data.iconSize or data.size) or 36
+        end
+    end
+
     -- Step 1: collect lightweight icon state (no extra combat logic – DoiteConditions owns that)
     for i = 1, total do
         local key  = keyList[i]
@@ -1808,7 +1828,16 @@ local function RefreshIcons()
         candidate.data = data
         candidate.show = wants
         candidate.tex  = tex
-        candidate.size = (data and (data.iconSize or data.size)) or 36
+        do
+            local sz = (data and (data.iconSize or data.size)) or 36
+            if data and data.group and data.group ~= "" and data.group ~= "no" and (data.isLeader ~= true) then
+                local ls = leaderSizeByGroup and leaderSizeByGroup[data.group]
+                if ls then
+                    sz = ls
+                end
+            end
+            candidate.size = sz
+        end
         candidate._computedPos = nil
 
         -- Stamp the logical bucket this icon belongs to (group/category/ungrouped)
@@ -1963,8 +1992,14 @@ local function RefreshIcons()
 
         if not posX then
             if isGrouped and not isLeader then
-                -- keep current point; just use saved alpha/scale/size for visual consistency
+                -- keep current point; but size must follow leader when grouped
                 local currentSize = (data and (data.iconSize or data.size)) or 36
+                if leaderSizeByGroup and data and data.group then
+                    local ls = leaderSizeByGroup[data.group]
+                    if ls then
+                        currentSize = ls
+                    end
+                end
                 size = size or currentSize
                 -- DO NOT SetPoint here for follower without computed pos (avoid snap-back)
             else

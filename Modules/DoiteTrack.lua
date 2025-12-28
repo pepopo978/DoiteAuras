@@ -36,6 +36,9 @@ function DoiteTrack:_OnPlayerLogin()
 
     -- profile signature + arm correction checks
     self:_OnProfileMaybeChanged("entering_world")
+
+    -- Special cases (class/talent-dependent)
+    self:_SC_OnProfileMaybeChanged("entering_world")
 end
 
 ---------------------------------------------------------------
@@ -154,7 +157,7 @@ local function _FindUnitByGuid(guid)
         return "player"
     end
 
-    if UnitExists and UnitExists("target") then
+    do
         local tg = _GetUnitGuidSafe("target")
         if tg and tg == guid then
             return "target"
@@ -177,7 +180,7 @@ local _clickOffAuraId = nil
 
 local function _NormTexturePath(tex)
     if not tex or tex == "" then return nil end
-    tex = string.gsub(tex, "/", "\\")
+    tex = str_gsub(tex, "/", "\\")
     tex = string.lower(tex)
     return tex
 end
@@ -392,6 +395,9 @@ local function _ScheduleProfileRescan(reason)
             _profileRescanReason = nil
 
             DoiteTrack:_OnProfileMaybeChanged(r)
+
+            -- Special cases (spec/talent mechanics on this server)
+            DoiteTrack:_SC_OnProfileMaybeChanged(r)
         end
     end)
 end
@@ -565,6 +571,16 @@ local function _SpellUsesComboDuration(spellId)
                 if type(v) == "number" and v ~= 0 then
                     uses = true
                     break
+                end
+            end
+        end
+
+        -- Fallback: some spells (eg Rip) scale duration by CP via durationIndex tables, even if effectPointsPerComboPoint isn't populated.
+        if not uses then
+            local ok2, idx = pcall(GetSpellRecField, spellId, "durationIndex")
+            if ok2 and type(idx) == "number" and idx > 0 then
+                if type(SpellDurationSecCP[idx]) == "table" then
+                    uses = true
                 end
             end
         end
@@ -923,6 +939,530 @@ end
 local ActiveSessions  = {}
 local SessionCounter  = 0
 local AuraStateByGuid = {}
+
+---------------------------------------------------------------
+-- Special cases
+--  DRUID: Carnage proc detection (Ferocious Bite -> CP gain)
+--  Cannot see a "refresh event", so infer:
+--    1) Player cast Ferocious Bite (by name)
+--    2) Within 0.5s, player gains a combo point (0->1 etc)
+--    3) If yes, refresh our stored timers for Rip/Rake on that target
+---------------------------------------------------------------
+
+local _SC_Druid = false
+local _SC_Druid_CarnageRank = 0
+
+local function _SC_ScanTalentRankByName(nameSubstr)
+    local GetNumTalentTabs = _G.GetNumTalentTabs
+    local GetNumTalents    = _G.GetNumTalents
+    local GetTalentInfo    = _G.GetTalentInfo
+    if (not GetNumTalentTabs) or (not GetNumTalents) or (not GetTalentInfo) then
+        return 0
+    end
+
+    local okTabs, tabs = pcall(GetNumTalentTabs)
+    if (not okTabs) or type(tabs) ~= "number" then
+        return 0
+    end
+
+    local tab
+    for tab = 1, tabs do
+        local okNum, num = pcall(GetNumTalents, tab)
+        if okNum and type(num) == "number" then
+            local i
+            for i = 1, num do
+                local okInfo, n, _, _, _, r = pcall(GetTalentInfo, tab, i)
+                if okInfo and n and r and str_find(n, nameSubstr) then
+                    if type(r) == "number" and r > 0 then
+                        return r
+                    end
+                    return 0
+                end
+            end
+        end
+    end
+
+    return 0
+end
+
+function DoiteTrack:_SC_OnProfileMaybeChanged(reason)
+    local _, cls = UnitClass("player")
+    cls = cls and string.upper(cls) or ""
+
+    _SC_Druid = (cls == "DRUID")
+
+    -- SHAMAN flag + cache lives on self
+    self._SC_Shaman = (cls == "SHAMAN") and true or false
+    if self._SC_Shaman and (not self._SC_Shaman_MoltenBlastCache) then
+        self._SC_Shaman_MoltenBlastCache = {}
+    end
+
+    if not _SC_Druid then
+        _SC_Druid_CarnageRank = 0
+
+        self._SC_Druid = false
+        self._SC_Druid_CarnageRank = 0
+        self._SC_Druid_LastFBAt = nil
+        self._SC_Druid_LastFBTargetGuid = nil
+        self._SC_Druid_LastCP = 0
+        return
+    end
+
+    _SC_Druid_CarnageRank = _SC_ScanTalentRankByName("Carnage")
+
+    self._SC_Druid = true
+    self._SC_Druid_CarnageRank = _SC_Druid_CarnageRank
+
+    -- Reset pending state on profile changes/spec swaps
+    self._SC_Druid_LastFBAt = nil
+    self._SC_Druid_LastFBTargetGuid = nil
+    self._SC_Druid_LastCP = _GetComboPointsSafe()
+end
+
+local function _SC_Druid_TryArmFerociousBite(spellId, targetGuid, now)
+    local d = _G["DoiteTrack"]
+    if not d or (not d._SC_Druid) or (tonumber(d._SC_Druid_CarnageRank) or 0) <= 0 then
+        return
+    end
+
+    spellId = tonumber(spellId) or 0
+    if spellId <= 0 then
+        return
+    end
+
+    local n = nil
+
+    local gsnr = _G.GetSpellNameAndRankForId
+    if gsnr then
+        local ok, nn = pcall(gsnr, spellId)
+        if ok and type(nn) == "string" and nn ~= "" then
+            n = nn
+        end
+    end
+
+    if (not n or n == "") and _G.SpellInfo then
+        local nn2 = _G.SpellInfo(spellId)
+        if type(nn2) == "string" and nn2 ~= "" then
+            n = nn2
+        end
+    end
+
+    if not n or n == "" then
+        return
+    end
+
+    -- Inline normalize
+    local norm = string.lower(n)
+    norm = string.gsub(norm, "^%s+", "")
+    norm = string.gsub(norm, "%s+$", "")
+    norm = string.gsub(norm, "%s*%(rank%s*%d+%)", "")
+    norm = string.gsub(norm, "%s*rank%s*%d+", "")
+    norm = string.gsub(norm, "^%s+", "")
+    norm = string.gsub(norm, "%s+$", "")
+
+    if norm ~= "ferocious bite" then
+        return
+    end
+
+    if (not targetGuid) or targetGuid == "" or targetGuid == "0x000000000" or targetGuid == "0x0000000000000000" then
+        local ue = _G.UnitExists
+        if ue then
+            local ok2, exists, guid = pcall(ue, "target")
+            if ok2 and (exists == 1 or exists == true) and guid and guid ~= "" then
+                targetGuid = guid
+            end
+        end
+    end
+
+    if not targetGuid or targetGuid == "" then
+        return
+    end
+
+    -- Store pending FB on the global DoiteTrack object (not locals)
+    d._SC_Druid_LastFBAt = now
+    d._SC_Druid_LastFBTargetGuid = targetGuid
+end
+
+local function _SC_Druid_RefreshBleeds(targetGuid, now, procDelay)
+    if not targetGuid or targetGuid == "" then return end
+
+    local bucket = AuraStateByGuid[targetGuid]
+    if not bucket then return end
+
+    -- Carnage refresh should reset the timer at the moment the proc is detected (CP gain), not back-dated by procDelay.
+    local applied = now
+
+    -- RIP
+    do
+        local entry = TrackedByNameNorm["rip"]
+        if entry and entry.spellIds then
+            local sid
+            for sid in pairs(entry.spellIds) do
+                sid = tonumber(sid) or 0
+                if sid > 0 then
+                    local a = bucket[sid]
+                    local hadSession = false
+
+                    -- Refresh active session FIRST (even if aura bucket entry is missing due to abort/refresh clears)
+                    do
+                        local id, s
+                        for id, s in pairs(ActiveSessions) do
+                            if s and (not s.aborted) and (not s.complete) and s.spellId == sid and s.targetGuid == targetGuid then
+                                hadSession = true
+                                s.appliedAt = applied
+                                s.lastSeen  = now
+                                s.applyConfirmed = true
+
+                                if (not s.fullDur) or s.fullDur <= 0 then
+                                    local d2 = _G["DoiteTrack"]
+                                    if d2 and d2.GetBaselineDuration then
+                                        local base2 = d2:GetBaselineDuration(sid, s.cp or 0)
+                                        if base2 and base2 > 0 then
+                                            s.fullDur = base2
+                                        end
+                                    end
+                                end
+                                break
+                            end
+                        end
+                    end
+
+                    -- Only touch/create bucket state if evidence that it was active: either existing bucket entry OR an active session.
+                    if a or hadSession then
+                        if not a then
+                            a = {}
+                            bucket[sid] = a
+                        end
+
+                        a.appliedAt = applied
+                        a.lastSeen  = now
+                        a._goneAt   = nil
+
+                        if (not a.fullDur) or a.fullDur <= 0 then
+                            local d = _G["DoiteTrack"]
+                            if d and d.GetBaselineDuration then
+                                local base = d:GetBaselineDuration(sid, a.cp or 0)
+                                if base and base > 0 then
+                                    a.fullDur = base
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- RAKE
+    do
+        local entry = TrackedByNameNorm["rake"]
+        if entry and entry.spellIds then
+            local sid
+            for sid in pairs(entry.spellIds) do
+                sid = tonumber(sid) or 0
+                if sid > 0 then
+                    local a = bucket[sid]
+                    local hadSession = false
+
+                    -- Refresh active session FIRST (even if aura bucket entry is missing due to abort/refresh clears)
+                    do
+                        local id, s
+                        for id, s in pairs(ActiveSessions) do
+                            if s and (not s.aborted) and (not s.complete) and s.spellId == sid and s.targetGuid == targetGuid then
+                                hadSession = true
+                                s.appliedAt = applied
+                                s.lastSeen  = now
+                                s.applyConfirmed = true
+
+                                if (not s.fullDur) or s.fullDur <= 0 then
+                                    local d2 = _G["DoiteTrack"]
+                                    if d2 and d2.GetBaselineDuration then
+                                        local base2 = d2:GetBaselineDuration(sid, s.cp or 0)
+                                        if base2 and base2 > 0 then
+                                            s.fullDur = base2
+                                        end
+                                    end
+                                end
+                                break
+                            end
+                        end
+                    end
+
+                    -- Only touch/create bucket state if evidence that it was active: either existing bucket entry OR an active session.
+                    if a or hadSession then
+                        if not a then
+                            a = {}
+                            bucket[sid] = a
+                        end
+
+                        a.appliedAt = applied
+                        a.lastSeen  = now
+                        a._goneAt   = nil
+
+                        if (not a.fullDur) or a.fullDur <= 0 then
+                            local d = _G["DoiteTrack"]
+                            if d and d.GetBaselineDuration then
+                                local base = d:GetBaselineDuration(sid, a.cp or 0)
+                                if base and base > 0 then
+                                    a.fullDur = base
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------
+-- Special case
+--  SHAMAN: Molten Blast refreshes Flame Shock to full duration
+--  Conditioned: Flame Shock is tracked as onlyMine
+--  Behavior:
+--    - If player casts Molten Blast while their Flame Shock is active on that target:
+--        * reset Flame Shock timer to full duration (appliedAt = now)
+--        * if a recording (willRecord/correctMode) is running for Flame Shock, restart its timing from now
+---------------------------------------------------------------
+
+_G["DoiteTrack_SC_TryMoltenBlast"] = function(spellId, targetGuid, now)
+    local d = _G["DoiteTrack"]
+    if not d or not d._SC_Shaman then
+        return
+    end
+
+    spellId = tonumber(spellId) or 0
+    if spellId <= 0 then
+        return
+    end
+
+    local cache = d._SC_Shaman_MoltenBlastCache
+    if not cache then
+        cache = {}
+        d._SC_Shaman_MoltenBlastCache = cache
+    end
+
+    local cached = cache[spellId]
+    if cached == nil then
+        local n = nil
+
+        local gsnr = _G.GetSpellNameAndRankForId
+        if gsnr then
+            local ok, nn = pcall(gsnr, spellId)
+            if ok and type(nn) == "string" and nn ~= "" then
+                n = nn
+            end
+        end
+
+        if (not n or n == "") and _G.SpellInfo then
+            local nn2 = _G.SpellInfo(spellId)
+            if type(nn2) == "string" and nn2 ~= "" then
+                n = nn2
+            end
+        end
+
+        -- Inline normalize (avoid referencing chunk-local _NormSpellName)
+        local norm = nil
+        if n and n ~= "" then
+            norm = string.lower(n)
+            norm = string.gsub(norm, "^%s+", "")
+            norm = string.gsub(norm, "%s+$", "")
+            norm = string.gsub(norm, "%s*%(rank%s*%d+%)", "")
+            norm = string.gsub(norm, "%s*rank%s*%d+", "")
+            norm = string.gsub(norm, "^%s+", "")
+            norm = string.gsub(norm, "%s+$", "")
+        end
+
+        cached = (norm == "molten blast") and true or false
+        cache[spellId] = cached
+    end
+
+    if not cached then
+        return
+    end
+
+    -- Resolve targetGuid (Molten Blast is harmful; do not fall back to player)
+    if (not targetGuid) or targetGuid == "" or targetGuid == "0x000000000" or targetGuid == "0x0000000000000000" then
+        local ue = _G.UnitExists
+        if ue then
+            local ok2, exists, guid = pcall(ue, "target")
+            if ok2 and (exists == 1 or exists == true) and guid and guid ~= "" then
+                targetGuid = guid
+            else
+                return
+            end
+        else
+            return
+        end
+    end
+
+    -- Refresh Flame Shock timers/sessions
+    do
+        local entry = TrackedByNameNorm["flame shock"]
+        if (not entry) or entry.kind ~= "Debuff" or entry.onlyMine ~= true then
+            return
+        end
+
+        local bucket = AuraStateByGuid[targetGuid]
+        if not bucket then
+            return
+        end
+
+        local did = false
+
+        -- 1) Preferred: known spellIds for "flame shock"
+        if entry.spellIds then
+            local sid
+            for sid in pairs(entry.spellIds) do
+                sid = tonumber(sid) or 0
+                if sid > 0 then
+                    local restartedSession = false
+
+                    -- Restart any active session for this (sid,target)
+                    local id, s
+                    for id, s in pairs(ActiveSessions) do
+                        if s and (not s.aborted) and (not s.complete) and s.spellId == sid and s.targetGuid == targetGuid then
+                            s.appliedAt = now
+                            s.lastSeen  = now
+                            s.applyConfirmed = true
+                            restartedSession = true
+                            break
+                        end
+                    end
+
+                    if restartedSession then
+                        local a = bucket[sid]
+                        if not a then
+                            a = {}
+                            bucket[sid] = a
+                        end
+                        a.appliedAt = now
+                        a.lastSeen  = now
+                        a._goneAt   = nil
+                        did = true
+                    else
+                        -- No session: only refresh if player can prove it's still active (known dur + positive remaining)
+                        local a = bucket[sid]
+                        if a then
+                            local base = a.fullDur
+                            if (not base) or base <= 0 then
+                                base = d:GetBaselineDuration(sid, a.cp or 0)
+                                if base and base > 0 then
+                                    a.fullDur = base
+                                end
+                            end
+
+                            if base and base > 0 then
+                                local appliedAt = a.appliedAt or a.lastSeen
+                                if appliedAt then
+                                    local rem = base - (now - appliedAt)
+                                    if rem > 0 then
+                                        a.appliedAt = now
+                                        a.lastSeen  = now
+                                        a._goneAt   = nil
+                                        a.fullDur   = base
+                                        did = true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 2) Fallback: if entry.spellIds empty/missing, scan bucket keys mapped to this entry
+        if (not did) then
+            local sid
+            for sid in pairs(bucket) do
+                local e = TrackedBySpellId[sid]
+                if e and e.normName == "flame shock" and e.kind == "Debuff" then
+                    sid = tonumber(sid) or 0
+                    if sid > 0 then
+                        local restartedSession = false
+
+                        local id, s
+                        for id, s in pairs(ActiveSessions) do
+                            if s and (not s.aborted) and (not s.complete) and s.spellId == sid and s.targetGuid == targetGuid then
+                                s.appliedAt = now
+                                s.lastSeen  = now
+                                s.applyConfirmed = true
+                                restartedSession = true
+                                break
+                            end
+                        end
+
+                        if restartedSession then
+                            local a = bucket[sid]
+                            if not a then
+                                a = {}
+                                bucket[sid] = a
+                            end
+                            a.appliedAt = now
+                            a.lastSeen  = now
+                            a._goneAt   = nil
+                            did = true
+                        else
+                            local a = bucket[sid]
+                            if a then
+                                local base = a.fullDur
+                                if (not base) or base <= 0 then
+                                    base = d:GetBaselineDuration(sid, a.cp or 0)
+                                    if base and base > 0 then
+                                        a.fullDur = base
+                                    end
+                                end
+
+                                if base and base > 0 then
+                                    local appliedAt = a.appliedAt or a.lastSeen
+                                    if appliedAt then
+                                        local rem = base - (now - appliedAt)
+                                        if rem > 0 then
+                                            a.appliedAt = now
+                                            a.lastSeen  = now
+                                            a._goneAt   = nil
+                                            a.fullDur   = base
+                                            did = true
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function DoiteTrack:_OnPlayerComboPoints()
+    if (not self._SC_Druid) or (tonumber(self._SC_Druid_CarnageRank) or 0) <= 0 or (not self._SC_Druid_LastFBAt) then
+        return
+    end
+
+    local now = GetTime and GetTime() or 0
+
+    local dt = now - (self._SC_Druid_LastFBAt or now)
+    if dt > 0.5 then
+        -- timed out
+        self._SC_Druid_LastFBAt = nil
+        self._SC_Druid_LastFBTargetGuid = nil
+        self._SC_Druid_LastCP = _GetComboPointsSafe()
+        return
+    end
+
+    local cp = _GetComboPointsSafe()
+
+    if cp > (self._SC_Druid_LastCP or 0) and self._SC_Druid_LastFBTargetGuid then
+        _SC_Druid_RefreshBleeds(self._SC_Druid_LastFBTargetGuid, now, dt)
+
+        -- consume pending FB to avoid double-trigger
+        self._SC_Druid_LastFBAt = nil
+        self._SC_Druid_LastFBTargetGuid = nil
+    end
+
+    self._SC_Druid_LastCP = cp
+end
 
 local function _GetAuraBucketForGuid(guid, create)
     if not guid or guid == "" then return nil end
@@ -1343,7 +1883,7 @@ local function _ClearTimersForName(normName)
 end
 
 _G["DoiteTrack_ClearTimers"] = function(arg)
-    -- No argument: nuke everything (old behaviour).
+    -- No argument: nuke everything
     if not arg or arg == "" then
         _ClearAllTrackedDurations()
         return
@@ -1388,10 +1928,9 @@ local function _GetUnitAuraTable(unit, isDebuff)
             _G["DoiteTrack_AuraFieldCache"] = cache
         end
 
-        local gt = _G.GetTime
         local now = 0
-        if gt then
-            now = gt()
+        if GetTime then
+            now = GetTime()
         end
 
         -- 0.1s tick id
@@ -1590,9 +2129,10 @@ local function _AuraHasSpellId(unit, spellId, isDebuff)
     if fieldCache and fieldCache._gen then
         gen = fieldCache._gen
     else
-        local gt = _G.GetTime
         local now = 0
-        if gt then now = gt() end
+        if GetTime then
+            now = GetTime()
+        end
 
         local tick = math.floor(now * 10)
         if cache._tick ~= tick then
@@ -2135,6 +2675,17 @@ function DoiteTrack:_OnSpellCastEvent()
 
     local now = GetTime()
     RecentCastBySpellId[spellId] = now
+
+    -- Special case: DRUID Carnage inference (Ferocious Bite is NOT an aura, so handle before "entry" logic)
+    _SC_Druid_TryArmFerociousBite(spellId, targetGuid, now)
+
+    do
+        local f = _G["DoiteTrack_SC_TryMoltenBlast"]
+        if f then
+            f(spellId, targetGuid, now)
+        end
+    end
+
     local entry = TrackedBySpellId[spellId]
 
     -- Fallback: resolve by normalised spell name so downranks still match
@@ -2210,7 +2761,9 @@ function DoiteTrack:_OnSpellCastEvent()
     local correctBaseRounded = nil
 
     if (not willRecord) then
-        if entry.onlyMine and (entry.trackHelp or entry.trackHarm) and (not (entry.trackSelf and (not entry.trackHelp) and (not entry.trackHarm))) then
+        local allowCorrection = true
+
+        if allowCorrection and entry.onlyMine and (entry.trackHelp or entry.trackHarm) and (not (entry.trackSelf and (not entry.trackHelp) and (not entry.trackHarm))) then
             -- Order:
             -- a) correction recording (stored override)
             -- b) DBC
@@ -2333,7 +2886,17 @@ function DoiteTrack:_OnUnitCastEvent()
     if last and (now - last) < 1.0 then
         return
     end
+    
     RecentCastBySpellId[spellId] = now
+	-- Special case: DRUID Carnage inference (Ferocious Bite is NOT an aura, so handle before "entry" logic)
+    _SC_Druid_TryArmFerociousBite(spellId, targetGuid, now)
+
+    do
+        local f = _G["DoiteTrack_SC_TryMoltenBlast"]
+        if f then
+            f(spellId, targetGuid, now)
+        end
+    end
 
     local entry = TrackedBySpellId[spellId]
 
@@ -2403,7 +2966,9 @@ function DoiteTrack:_OnUnitCastEvent()
     local correctBaseRounded = nil
 
     if (not willRecord) then
-        if entry.onlyMine and (entry.trackHelp or entry.trackHarm) and (not (entry.trackSelf and (not entry.trackHelp) and (not entry.trackHarm))) then
+        local allowCorrection = true
+
+        if allowCorrection and entry.onlyMine and (entry.trackHelp or entry.trackHarm) and (not (entry.trackSelf and (not entry.trackHelp) and (not entry.trackHarm))) then
             -- Order:
             -- a) correction recording (stored override)
             -- b) DBC
@@ -2619,6 +3184,7 @@ function DoiteTrack:_OnUnitInventoryChanged()
     -- only care about player
     if arg1 and arg1 ~= "player" then return end
     self:_OnProfileMaybeChanged("gear_change")
+    self:_SC_OnProfileMaybeChanged("gear_change")
 end
 
 TrackFrame:RegisterEvent("PLAYER_LOGIN")
@@ -2631,6 +3197,7 @@ TrackFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 TrackFrame:RegisterEvent("UNIT_CASTEVENT")
 TrackFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 TrackFrame:RegisterEvent("LEARNED_SPELL_IN_TAB")
+TrackFrame:RegisterEvent("PLAYER_COMBO_POINTS")
 
 TrackFrame:SetScript("OnEvent", function()
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
@@ -2647,6 +3214,8 @@ TrackFrame:SetScript("OnEvent", function()
         DoiteTrack:_OnUnitInventoryChanged()
     elseif event == "LEARNED_SPELL_IN_TAB" then
         _ScheduleProfileRescan(event)
+    elseif event == "PLAYER_COMBO_POINTS" then
+        DoiteTrack:_OnPlayerComboPoints()
     elseif event == "UNIT_CASTEVENT" then
         DoiteTrack:_OnUnitCastEvent()
     end
@@ -2695,9 +3264,41 @@ function DoiteTrack:GetAuraRemainingSeconds(spellId, unit)
     local rem     = base - elapsed
 
     if rem <= 0 then
-        -- past players own duration, forget this entry for ownership purposes
+        if (tonumber(self._SC_Druid_CarnageRank) or 0) > 0 then
+            local wantName = nil
+            if spellId == 9896 then
+                wantName = "Rip"
+            elseif spellId == 9904 then
+                wantName = "Rake"
+            end
+
+            if wantName then
+                local present = self:HasAnyAuraByName(wantName, unit)
+                if present then
+                    a.appliedAt = now
+                    a.lastSeen  = now
+                    a._goneAt   = nil
+                    return base
+                end
+
+                -- Grace window: avoid 0->nil flicker (and preserve stored cp) while server-side refresh / aura table updates settle.
+                if not a._goneAt then
+                    a._goneAt = now
+                    return 0.01
+                end
+                if (now - a._goneAt) <= 0.6 then
+                    return 0.01
+                end
+                a._goneAt = nil
+            end
+        end
+
         bucket[spellId] = nil
         return nil
+    end
+
+    if a._goneAt then
+        a._goneAt = nil
     end
 
     return rem

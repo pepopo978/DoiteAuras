@@ -150,7 +150,7 @@ local function ComputeGroupLayout(entries, groupName)
 			-- Use frame flags; fall back to 'show'; finally fall back to "currently visible" to avoid races
 			local wants = (f and (f._daShouldShow == true or f._daSliding == true))
 					   or (e.show == true)
-					   or (f and f:IsShown() == 1)
+					   or (f and f:IsShown())
 
 			-- While editing, always include the edited member in the layout pool
 			if editKey and e.key == editKey then
