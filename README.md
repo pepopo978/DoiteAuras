@@ -31,7 +31,7 @@ _Timestamps are available in the description._
 - Use the **minimap icon** <img width="32" height="32" alt="doiteauras-icon" src="https://github.com/user-attachments/assets/908afec6-0de1-4a4a-8081-198cac49e937" />
 - `/da` or `/doite` or `/doiteauras`
 
-## Shared exported builds
+## Shared exported builds (for inspiration or use)
 - Warrior: [**LINK**](https://pastecode.io/s/9npu3jvg)
 - Druid: [all forms]: [**LINK**](https://pastecode.io/s/fd99yvzi)
 - Kara40 Boss Debuffs: [**LINK**](https://pastecode.io/s/473z2tgz)
