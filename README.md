@@ -58,8 +58,4 @@ Addon made by Doite, while all extensions of the 1.12/LUA 5.0 API by mentioned l
 You can check out my other addon here: [Tactica](https://github.com/Player-Doite/tactica) (_a raid helper for raid-leaders, including auto-building raids, auto-invite, posting tactics, assigning roles in raid roster and more_).
 
 ## Thanks to all fellow addon developers - while a special thank you to:
-Not added yet - [NAME](GITHUB LINK) - Description
-
-Not added yet - [NAME](GITHUB LINK) - Description
-
-Not added yet - [NAME](GITHUB LINK) - Description
+To be added.
