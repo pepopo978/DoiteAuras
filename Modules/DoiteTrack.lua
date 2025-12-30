@@ -17,7 +17,6 @@ function DoiteTrack:_OnPlayerLogin()
     UnitExists       = _G.UnitExists
     GetUnitField     = _G.GetUnitField
     SpellInfo        = _G.SpellInfo
-    CancelPlayerBuff = _G.CancelPlayerBuff
 
     -- Nampower: enable AuraCast events
     local SetCVar = _G.SetCVar
@@ -2634,6 +2633,25 @@ local function _EnsureOnUpdateEnabled()
                                                 end
                                             end
 
+                                            -- Conflagrate consume safety net (PLAYER only):
+                                            -- If this is Immolate recording and *player* just cast Conflagrate on this target, abort instead of finishing (prevents committing partial durations).
+                                            if s._CFGGuard and (s.willRecord or s.correctMode) then
+                                                local cf = _G["DoiteTrack_ConflagrateRecent"]
+                                                local t2 = cf and cf[s.targetGuid]
+                                                if t2 then
+                                                    local dtCF = now2 - t2
+                                                    if dtCF >= 0 and dtCF <= 0.75 then
+                                                        _AbortSession(s, "conflagrate consumed")
+                                                        if s.willRecord then
+                                                            _NotifyTrackingCancelled(s.spellName, "consumed by Conflagrate")
+                                                        elseif s.correctMode then
+                                                            _DebugCorrection("cancel: conflagrate consumed ("..tostring(s.spellId)..")")
+                                                        end
+                                                        cf[s.targetGuid] = nil
+                                                    end
+                                                end
+                                            end
+
                                             if not s.aborted then
                                                 local dur = lastSeen - s.appliedAt
                                                 if dur > 0.5 and dur < 600 then
@@ -2696,6 +2714,77 @@ function DoiteTrack:_OnSpellCastEvent()
 
     local now = GetTime()
     RecentCastBySpellId[spellId] = now
+	
+	-- Conflagrate consumption guard (PLAYER spellcast event):
+    -- If player casts Conflagrate on a target where currently there is an active *recording* session for Immolate, abort it so it never commits a partial duration.
+    do
+        local n = nil
+
+        if GetSpellNameAndRankForId then
+            local ok, nn = pcall(GetSpellNameAndRankForId, spellId)
+            if ok and nn and nn ~= "" then
+                n = nn
+            end
+        end
+
+        if (not n or n == "") and SpellInfo then
+            local nn2 = SpellInfo(spellId)
+            if type(nn2) == "string" and nn2 ~= "" then
+                n = nn2
+            end
+        end
+
+        if n and n ~= "" then
+            local norm = _NormSpellName(n)
+            if norm == "conflagrate" then
+                -- Resolve targetGuid (Conflagrate is harmful; do not fall back to player)
+                if (not targetGuid) or targetGuid == "" or targetGuid == "0x000000000" or targetGuid == "0x0000000000000000" then
+                    local tg = _GetUnitGuidSafe("target")
+                    if tg and tg ~= "" then
+                        targetGuid = tg
+                    end
+                end
+
+                if targetGuid and targetGuid ~= "" and targetGuid ~= "0x000000000" and targetGuid ~= "0x0000000000000000" then
+                    local nowCF = now
+
+                    local cf = _G["DoiteTrack_ConflagrateRecent"]
+                    if not cf then
+                        cf = {}
+                        _G["DoiteTrack_ConflagrateRecent"] = cf
+                    end
+                    cf[targetGuid] = nowCF
+
+                    local toAbort = nil
+                    local id, s
+                    for id, s in pairs(ActiveSessions) do
+                        if s and (not s.aborted) and (not s.complete) and s._CFGGuard and s.targetGuid == targetGuid then
+                            if s.willRecord or s.correctMode then
+                                if not toAbort then toAbort = {} end
+                                toAbort[table.getn(toAbort) + 1] = id
+                            end
+                        end
+                    end
+
+                    if toAbort then
+                        local i
+                        for i = 1, table.getn(toAbort) do
+                            local sid = toAbort[i]
+                            local ss = ActiveSessions[sid]
+                            if ss and (not ss.aborted) and (not ss.complete) then
+                                _AbortSession(ss, "conflagrate consumed")
+                                if ss.willRecord then
+                                    _NotifyTrackingCancelled(ss.spellName, "consumed by Conflagrate")
+                                elseif ss.correctMode then
+                                    _DebugCorrection("cancel: conflagrate consumed ("..tostring(ss.spellId)..")")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 
     -- Special case: DRUID Carnage inference (Ferocious Bite is NOT an aura, so handle before "entry" logic)
     _SC_Druid_TryArmFerociousBite(spellId, targetGuid, now)
@@ -2857,6 +2946,14 @@ function DoiteTrack:_OnSpellCastEvent()
         end
     end
 
+    local cfgGuard = false
+    if entry.onlyMine == true and entry.kind == "Debuff" then
+        local nn2 = _NormSpellName(name)
+        if nn2 == "immolate" then
+            cfgGuard = true
+        end
+    end
+
     local s = {
         id         = SessionCounter,
         spellId    = spellId,
@@ -2882,6 +2979,9 @@ function DoiteTrack:_OnSpellCastEvent()
 
         -- Swiftmend can consume Rejuv/Regrowth -> abort recordings if that happens
         _SMGuard   = smGuard and true or false,
+
+        -- Conflagrate can consume Immolate (player-only) -> abort recordings if that happens
+        _CFGGuard  = cfgGuard and true or false,
     }
 
     ActiveSessions[s.id] = s
@@ -2961,6 +3061,72 @@ function DoiteTrack:_OnUnitCastEvent()
                                     _NotifyTrackingCancelled(ss.spellName, "consumed by Swiftmend")
                                 elseif ss.correctMode then
                                     _DebugCorrection("cancel: swiftmend consumed ("..tostring(ss.spellId)..")")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+	
+	-- Conflagrate consumption guard (PLAYER caster only):
+    -- If player casts Conflagrate on a target where currently there is an active *recording* session for Immolate, abort it so it never commits a partial duration.
+    do
+        local n = nil
+
+        if GetSpellNameAndRankForId then
+            local ok, nn = pcall(GetSpellNameAndRankForId, spellId)
+            if ok and nn and nn ~= "" then
+                n = nn
+            end
+        end
+
+        if (not n or n == "") and SpellInfo then
+            local nn2 = SpellInfo(spellId)
+            if type(nn2) == "string" and nn2 ~= "" then
+                n = nn2
+            end
+        end
+
+        if n and n ~= "" then
+            local norm = _NormSpellName(n)
+            if norm == "conflagrate" then
+                local pGuid2 = _GetPlayerGUID()
+                if pGuid2 and casterGuid and casterGuid == pGuid2 then
+                    if targetGuid and targetGuid ~= "" and targetGuid ~= "0x000000000" and targetGuid ~= "0x0000000000000000" then
+                        local nowCF = (GetTime and GetTime() or 0)
+
+                        local cf = _G["DoiteTrack_ConflagrateRecent"]
+                        if not cf then
+                            cf = {}
+                            _G["DoiteTrack_ConflagrateRecent"] = cf
+                        end
+                        cf[targetGuid] = nowCF
+
+                        local toAbort = nil
+                        local id, s
+                        for id, s in pairs(ActiveSessions) do
+                            if s and (not s.aborted) and (not s.complete) and s._CFGGuard and s.targetGuid == targetGuid then
+                                if s.willRecord or s.correctMode then
+                                    if not toAbort then toAbort = {} end
+                                    toAbort[table.getn(toAbort) + 1] = id
+                                end
+                            end
+                        end
+
+                        if toAbort then
+                            local i
+                            for i = 1, table.getn(toAbort) do
+                                local sid = toAbort[i]
+                                local ss = ActiveSessions[sid]
+                                if ss and (not ss.aborted) and (not ss.complete) then
+                                    _AbortSession(ss, "conflagrate consumed")
+                                    if ss.willRecord then
+                                        _NotifyTrackingCancelled(ss.spellName, "consumed by Conflagrate")
+                                    elseif ss.correctMode then
+                                        _DebugCorrection("cancel: conflagrate consumed ("..tostring(ss.spellId)..")")
+                                    end
                                 end
                             end
                         end
@@ -3136,6 +3302,14 @@ function DoiteTrack:_OnUnitCastEvent()
         end
     end
 
+    local cfgGuard = false
+    if entry.onlyMine == true and entry.kind == "Debuff" then
+        local nn2 = _NormSpellName(name)
+        if nn2 == "immolate" then
+            cfgGuard = true
+        end
+    end
+
     local s = {
         id         = SessionCounter,
         spellId    = spellId,
@@ -3161,8 +3335,10 @@ function DoiteTrack:_OnUnitCastEvent()
 
         -- Swiftmend can consume Rejuv/Regrowth -> abort recordings if that happens
         _SMGuard   = smGuard and true or false,
-    }
 
+        -- Conflagrate can consume Immolate (player-only) -> abort recordings if that happens
+        _CFGGuard  = cfgGuard and true or false,
+	}
     ActiveSessions[s.id] = s
 
     if willRecord then
