@@ -32,20 +32,20 @@ PlayerAurasFrame:RegisterEvent("BUFF_REMOVED_SELF")
 PlayerAurasFrame:RegisterEvent("DEBUFF_ADDED_SELF")
 PlayerAurasFrame:RegisterEvent("DEBUFF_REMOVED_SELF")
 
-local function MarkActive(spellId, activeTable)
+local function MarkActive(spellId, activeTable, slot)
   -- cache spell name if not already cached
   if not DoitePlayerAuras.spellIdToNameCache[spellId] then
     local spellName = GetSpellNameAndRankForId(spellId)
     if spellName then
       DoitePlayerAuras.spellIdToNameCache[spellId] = spellName
       DoitePlayerAuras.spellNameToIdCache[spellName] = spellId
-      activeTable[spellName] = true
+      activeTable[spellName] = slot
     end
   else
-    -- mark as active
+    -- mark as active with slot
     local spellName = DoitePlayerAuras.spellIdToNameCache[spellId]
     if spellName then
-      activeTable[spellName] = true
+      activeTable[spellName] = slot
     end
   end
 end
@@ -67,7 +67,7 @@ local function UpdateBuffs()
     if spellId then
       DoitePlayerAuras.buffs[i].spellId = spellId
       DoitePlayerAuras.buffs[i].stacks = stacks
-      MarkActive(spellId, DoitePlayerAuras.activeBuffs)
+      MarkActive(spellId, DoitePlayerAuras.activeBuffs, i)
     else
       -- once we hit nil, all remaining will be nil, so clear them and break
       for j = i, 32 do
@@ -88,7 +88,7 @@ local function UpdateDebuffs()
     if spellId then
       DoitePlayerAuras.debuffs[i].spellId = spellId
       DoitePlayerAuras.debuffs[i].stacks = stacks
-      MarkActive(spellId, DoitePlayerAuras.activeDebuffs)
+      MarkActive(spellId, DoitePlayerAuras.activeDebuffs, i)
     else
       -- once we hit nil, all remaining will be nil, so clear them and break
       for j = i, 16 do
@@ -104,9 +104,18 @@ function DoitePlayerAuras.IsActive(spellName)
   return DoitePlayerAuras.activeBuffs[spellName] or DoitePlayerAuras.activeDebuffs[spellName] or false
 end
 
+function DoitePlayerAuras.HasBuff(spellName)
+  return DoitePlayerAuras.activeBuffs[spellName] or false
+end
+
+function DoitePlayerAuras.HasDebuff(spellName)
+  return DoitePlayerAuras.activeDebuffs[spellName] or false
+end
+
 function DoitePlayerAuras.GetBuffInfo(spellName)
-  -- check if spell is active
-  if not DoitePlayerAuras.activeBuffs[spellName] then
+  -- check if spell is active and get cached slot
+  local cachedSlot = DoitePlayerAuras.activeBuffs[spellName]
+  if not cachedSlot then
     return nil, nil
   end
 
@@ -115,7 +124,12 @@ function DoitePlayerAuras.GetBuffInfo(spellName)
     return nil, nil
   end
 
-  -- search through buffs for matching spell ID
+  -- check cached slot first
+  if DoitePlayerAuras.buffs[cachedSlot] and DoitePlayerAuras.buffs[cachedSlot].spellId == spellId then
+    return cachedSlot, DoitePlayerAuras.buffs[cachedSlot]
+  end
+
+  -- fallback: search through buffs for matching spell ID
   for i = 1, 32 do
     if not DoitePlayerAuras.buffs[i].spellId then
       break
@@ -130,8 +144,9 @@ function DoitePlayerAuras.GetBuffInfo(spellName)
 end
 
 function DoitePlayerAuras.GetDebuffInfo(spellName)
-  -- check if active
-  if not DoitePlayerAuras.activeDebuffs[spellName] then
+  -- check if active and get cached slot
+  local cachedSlot = DoitePlayerAuras.activeDebuffs[spellName]
+  if not cachedSlot then
     return nil, nil
   end
 
@@ -140,7 +155,12 @@ function DoitePlayerAuras.GetDebuffInfo(spellName)
     return nil, nil
   end
 
-  -- search through debuffs for matching spell ID
+  -- check cached slot first
+  if DoitePlayerAuras.debuffs[cachedSlot] and DoitePlayerAuras.debuffs[cachedSlot].spellId == spellId then
+    return cachedSlot, DoitePlayerAuras.debuffs[cachedSlot]
+  end
+
+  -- fallback: search through debuffs for matching spell ID
   for i = 1, 16 do
     if not DoitePlayerAuras.debuffs[i].spellId then
       break
@@ -165,7 +185,7 @@ PlayerAurasFrame:SetScript("OnEvent", function()
     if event == "BUFF_ADDED_SELF" then
       DoitePlayerAuras.buffs[slot].spellId = spellId
       DoitePlayerAuras.buffs[slot].stacks = stacks
-      MarkActive(spellId, DoitePlayerAuras.activeBuffs)
+      MarkActive(spellId, DoitePlayerAuras.activeBuffs, slot)
     elseif event == "BUFF_REMOVED_SELF" then
       -- probably could just shift down buffs a slot but not sure what happens when 2 get removed at the exact same time
       UpdateBuffs()
@@ -173,7 +193,7 @@ PlayerAurasFrame:SetScript("OnEvent", function()
     elseif event == "DEBUFF_ADDED_SELF" then
       DoitePlayerAuras.debuffs[slot].spellId = spellId
       DoitePlayerAuras.debuffs[slot].stacks = stacks
-      MarkActive(spellId, DoitePlayerAuras.activeDebuffs)
+      MarkActive(spellId, DoitePlayerAuras.activeDebuffs, slot)
     elseif event == "DEBUFF_REMOVED_SELF" then
       -- probably could just shift down buffs a slot but not sure what happens when 2 get removed at the exact same time
       UpdateDebuffs()

@@ -554,7 +554,9 @@ local function _GetAuraName_TooltipOnly(unit, index, isDebuff)
   return ""
 end
 
-local function _ScanUnitAuras(unit)
+local function _ScanTargetUnitAuras()
+  local unit = "target"
+
   -- Use cached lookup: auraName -> { list of keys that track this name }
   local trackedByName = _GetTrackedByName()
 
@@ -763,7 +765,7 @@ end
 ---------------------------------------------------------------
 
 -- Global alias so update loop can call it without capturing the loc
-_G.DoiteConditions_ScanUnitAuras = _ScanUnitAuras
+_G.DoiteConditions_ScanUnitAuras = _ScanTargetUnitAuras
 
 local function InCombat()
   return UnitAffectingCombat("player") == 1
@@ -2203,12 +2205,12 @@ local function _DoiteTrackRemainingPass(spellName, unit, comp, threshold)
 end
 
 -- For debuff checks only: if all debuff slots are full and the name exists in buffs, treat it as a debuff hit
-local function _UnitHasOverflowDebuff(unit, auraName)
-  if not unit or not auraName then
+local function _TargetHasOverflowDebuff(auraName)
+  if not auraName then
     return false
   end
 
-  local snap = auraSnapshot[unit]
+  local snap = auraSnapshot["target"]
   if not snap then
     return false
   end
@@ -2232,11 +2234,10 @@ local function _UnitHasOverflowDebuff(unit, auraName)
   return false
 end
 
-local function _AuraConditions_UnitHasAura(unit, auraName, wantDebuff)
-  if not unit or not auraName then
-    return false
-  end
-  if unit == "target" and (not UnitExists("target")) then
+local function _TargetHasAura(auraName, wantDebuff)
+  local unit = "target"
+
+  if not unit or not auraName or not UnitExists(unit) then
     return false
   end
 
@@ -2247,7 +2248,7 @@ local function _AuraConditions_UnitHasAura(unit, auraName, wantDebuff)
 
   if wantDebuff then
     -- Debuff checks: first real debuffs, then overflow in buffs.
-    return _UnitHasOverflowDebuff(unit, auraName)
+    return _TargetHasOverflowDebuff(auraName)
   else
     local b = snap.buffs
     return b and b[auraName] == true
@@ -2400,6 +2401,9 @@ local function _AuraConditions_CheckEntry(entry)
   end
   -- === END TALENT CONDITION BRANCH (Known / Not known) ===
 
+  local hasAura = false
+  local wantDebuff = (entry.buffType == "DEBUFF")
+
   -- BUFF / DEBUFF branch: check unit auras
   local unit = entry.unit or "player"
   if unit ~= "player" and unit ~= "target" then
@@ -2407,12 +2411,19 @@ local function _AuraConditions_CheckEntry(entry)
   end
 
   -- If explicitly target "target" but have no target, do not pass
-  if unit == "target" and (not UnitExists("target")) then
-    return false
-  end
+  if unit == "player" then
+    if not wantDebuff and DoitePlayerAuras.HasBuff(name) then
+      hasAura = true
+    elseif wantDebuff and DoitePlayerAuras.HasDebuff(name) then
+      hasAura = true
+    end
+  elseif unit == "target" then
+    if not UnitExists("target") then
+      return false
+    end
 
-  local wantDebuff = (entry.buffType == "DEBUFF")
-  local hasAura = _AuraConditions_UnitHasAura(unit, name, wantDebuff)
+    hasAura = _TargetHasAura(name, wantDebuff)
+  end
 
   if entry.mode == "found" then
     return hasAura
@@ -2475,14 +2486,28 @@ local function _StacksPasses(cnt, comp, target)
   return true
 end
 
--- Get stack count for a named aura on a unit (works for player/target) if all debuff slots are full and the debuff has overflown into the buff list, also read stacks from UnitBuff.
+-- Get stack count for a named aura on target (or player). Uses DoitePlayerAuras for player checks.
 local function _GetAuraStacksOnUnit(unit, auraName, wantDebuff)
   if not unit or not auraName then
     return nil
   end
 
+  -- Use DoitePlayerAuras for player checks
+  if unit == "player" then
+    local _, info
+    if wantDebuff then
+      _, info = DoitePlayerAuras.GetDebuffInfo(auraName)
+    else
+      _, info = DoitePlayerAuras.GetBuffInfo(auraName)
+    end
+    if info and info.stacks then
+      return info.stacks
+    end
+    return nil
+  end
+
   ----------------------------------------------------------------
-  -- 1) Primary scan: normal BUFF / DEBUFF list (unchanged)
+  -- Primary scan: normal BUFF / DEBUFF list for non-player units
   ----------------------------------------------------------------
   local i = 1
   while i <= 40 do
@@ -2560,7 +2585,8 @@ local function _GetAuraStacksOnUnit(unit, auraName, wantDebuff)
 end
 
 -- Fast check: does unit have ANY of the named buffs?
-local function _UnitHasAnyBuffName(unit, names)
+local function _TargetHasAnyBuffName(names)
+  local unit = "target"
   if not unit or not names then
     return false
   end
@@ -3364,11 +3390,8 @@ local function _DruidNoForm(map)
   return not any
 end
 
-local function _DruidStealth(auraSnap)
-  -- Strictly via aura (Prowl) per spec
-  local s = auraSnap and auraSnap.player
-  local buffs = s and s.buffs
-  return buffs and buffs["Prowl"] == true
+local function _DruidStealth()
+  return DoitePlayerAuras.HasBuff("prowl")
 end
 
 -- Normalize editor labels so logic is robust to wording differences
@@ -3397,7 +3420,7 @@ local function _PaladinNoAura(map)
   })
 end
 
-local function _PassesFormRequirement(formStr, auraSnap)
+local function _PassesFormRequirement(formStr)
   formStr = _NormalizeFormLabel(formStr)
   if not formStr or formStr == "All" then
     return true
@@ -3477,10 +3500,10 @@ local function _PassesFormRequirement(formStr, auraSnap)
     end
     -- stealth variants use aura state
     if formStr == "7. Stealth" then
-      return _DruidStealth(auraSnap)
+      return _DruidStealth()
     end
     if formStr == "8. No Stealth" then
-      return not _DruidStealth(auraSnap)
+      return not _DruidStealth()
     end
     -- multis
     if formStr == "Multi: 0+5" then
@@ -3493,10 +3516,10 @@ local function _PassesFormRequirement(formStr, auraSnap)
       return _AnyActive(map, { "Dire Bear Form", "Bear Form", "Cat Form" })
     end
     if formStr == "Multi: 3+7" then
-      return (map["Cat Form"] == true) or _DruidStealth(auraSnap)
+      return (map["Cat Form"] == true) or _DruidStealth()
     end
     if formStr == "Multi: 3+8" then
-      return (map["Cat Form"] == true) and (not _DruidStealth(auraSnap))
+      return (map["Cat Form"] == true) and (not _DruidStealth())
     end
     if formStr == "Multi: 5+6" then
       return _AnyActive(map, { "Moonkin Form", "Tree of Life Form" })
@@ -3505,7 +3528,7 @@ local function _PassesFormRequirement(formStr, auraSnap)
       return _DruidNoForm(map) or _AnyActive(map, { "Moonkin Form", "Tree of Life Form" })
     end
     if formStr == "Multi: 1+3+8" then
-      return _AnyActive(map, { "Dire Bear Form", "Bear Form", "Cat Form" }) and (not _DruidStealth(auraSnap))
+      return _AnyActive(map, { "Dire Bear Form", "Bear Form", "Cat Form" }) and (not _DruidStealth())
     end
     return true
   end
@@ -3586,8 +3609,8 @@ local function _PassesFormRequirement(formStr, auraSnap)
 end
 
 -- Global wrapper to reduce upvalues in big condition functions
-function DoiteConditions_PassesFormRequirement(formStr, auraSnap)
-  return _PassesFormRequirement(formStr, auraSnap)
+function DoiteConditions_PassesFormRequirement(formStr)
+  return _PassesFormRequirement(formStr)
 end
 
 local function _EnsureAbilityTexture(frame, data)
@@ -4008,7 +4031,7 @@ function DoiteConditions:ProcessPendingAuraScans()
     self._pendingAuraScanTarget = false
 
     if _hasAnyTargetAuraUsage and UnitExists and UnitExists("target") then
-      _ScanUnitAuras("target")
+      _ScanTargetUnitAuras()
     else
       self:_ClearTargetAuraSnapshot()
     end
@@ -4343,20 +4366,32 @@ local function CheckAbilityConditions(data)
             if UnitExists("target")
                 and UnitIsFriend("player", "target")
                 and (not UnitIsUnit("player", "target")) then
-              ok = _UnitHasAnyBuffName("target", needs)
+              ok = _TargetHasAnyBuffName(needs)
             else
               ok = false
             end
 
           elseif allowSelf and not (allowHelp or allowHarm) then
-            ok = _UnitHasAnyBuffName("player", needs)
+            ok = false
 
+            for _, name in pairs(needs) do
+              if DoitePlayerAuras.IsActive(name) then
+                ok = true
+                break
+              end
+            end
           else
             if UnitExists("target") then
               if UnitIsUnit("player", "target") then
-                ok = _UnitHasAnyBuffName("player", needs)
+                ok = false
+                for _, name in pairs(needs) do
+                  if DoitePlayerAuras.IsActive(name) then
+                    ok = true
+                    break
+                  end
+                end
               elseif UnitIsFriend("player", "target") then
-                ok = _UnitHasAnyBuffName("target", needs)
+                ok = _TargetHasAnyBuffName(needs)
               else
                 ok = false
               end
@@ -4449,7 +4484,7 @@ local function CheckAbilityConditions(data)
 
   -- === Form / Stance requirement (if set)
   if show and c.form and c.form ~= "All" then
-    if not DoiteConditions_PassesFormRequirement(c.form, auraSnapshot) then
+    if not DoiteConditions_PassesFormRequirement(c.form) then
       show = false
     end
   end
@@ -4685,7 +4720,7 @@ local function CheckItemConditions(data)
   -- Form / stance requirement
   -- --------------------------------------------------------------------
   if show and c.form and c.form ~= "All" then
-    if not DoiteConditions_PassesFormRequirement(c.form, auraSnapshot) then
+    if not DoiteConditions_PassesFormRequirement(c.form) then
       show = false
     end
   end
@@ -4898,20 +4933,12 @@ local function CheckAuraConditions(data)
   if (not found) and allowSelf then
     local hit = false
 
-    -- Check buffs using DoitePlayerAuras
     if wantBuff then
-      local buffSlot = DoitePlayerAuras.GetBuffInfo(name)
-      if buffSlot then
-        hit = true
-      end
+      hit = DoitePlayerAuras.HasBuff(name)
     end
 
-    -- Check debuffs using DoitePlayerAuras
     if (not hit) and wantDebuff then
-      local debuffSlot = DoitePlayerAuras.GetDebuffInfo(name)
-      if debuffSlot then
-        hit = true
-      end
+      hit = DoitePlayerAuras.HasDebuff(name)
     end
 
     if hit then
@@ -4929,7 +4956,7 @@ local function CheckAuraConditions(data)
       if wantBuff and s.buffs[name] then
         hit = true
         -- Debuff-type icons: overflow-aware.
-      elseif wantDebuff and _UnitHasOverflowDebuff("target", name) then
+      elseif wantDebuff and _TargetHasOverflowDebuff(name) then
         hit = true
       end
 
@@ -4949,7 +4976,7 @@ local function CheckAuraConditions(data)
       if wantBuff and s.buffs[name] then
         hit = true
         -- Debuff-type icons: overflow-aware.
-      elseif wantDebuff and _UnitHasOverflowDebuff("target", name) then
+      elseif wantDebuff and _TargetHasOverflowDebuff(name) then
         hit = true
       end
 
@@ -5005,7 +5032,7 @@ local function CheckAuraConditions(data)
 
   -- === Form / Stance requirement (if set)
   if c.form and c.form ~= "All" then
-    if not DoiteConditions_PassesFormRequirement(c.form, auraSnapshot) then
+    if not DoiteConditions_PassesFormRequirement(c.form) then
       show = false
     end
   end
